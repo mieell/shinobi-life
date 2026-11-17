@@ -55,6 +55,7 @@ final class LifeCheck {
         challengesAndSeasonEvents();
         distinctLives();
         clanMasteryAndEyeEvolution();
+        auditRegressions();
         System.out.println("Life checks passed for 23 combat paths, three eye powers, five summons, meditation, gifts, favors, randomized origins, travel, escort branches, romance, mixed inheritance, succession, academy promotions, Hokage elections, war, truces, newborn progression, varied contacts, and evolved clan techniques.");
     }
 
@@ -246,8 +247,16 @@ final class LifeCheck {
         parent.deathAge = 19;
         for (int i = 0; i < 4; i++) parent.advance();
         Life heir = parent.succeed(child);
-        check(parent.deceased && heir != null && heir.age() == 18 && heir.generation == 2, "continue as child");
+        check(parent.deceased && heir != null && heir.age() == 1 && heir.generation == 2, "continue as child");
         check(heir.heritageEyes() == (copy | far) && heir.awakenedEyes == 0, "inherited eyes are dormant");
+        check(heir.season == parent.season && heir.worldSeed == parent.worldSeed
+                && heir.residents()[other.id].name.equals(other.name) && heir.isRelative(heir.residents()[other.id]),
+                "the same parent and village roster survive succession");
+        while (heir.age() < 15) {
+            if (heir.age() >= 6) heir.attendClass(Life.Lesson.CONTROL);
+            heir.advance();
+        }
+        check(heir.graduate(Life.AcademyTrack.FIELD), "young heir attends academy");
         heir.add(Stat.SKILL, 20);
         heir.victories = 1;
         check(!heir.awakenEye(EyePower.HORIZON), "unrelated eye cannot awaken");
@@ -356,7 +365,10 @@ final class LifeCheck {
         check(child.age() == 6 && child.knowsContact(2) && child.attendClass(Life.Lesson.CONTROL),
                 "academy classes and rival at age six");
         for (int i = 0; i < 36; i++) child.advance();
-        check(child.age() == 15 && child.canStart(Missions.COURIER) && child.hasSeasonEvent(), "shinobi at fifteen");
+        check(child.age() == 15 && !child.canStart(Missions.COURIER) && child.hasSeasonEvent(), "missions require graduation");
+        check(child.academyCredits == 1 && child.attendClass(Life.Lesson.CONTROL), "can finish academy after fifteen");
+        child.add(Stat.SKILL, 12);
+        check(child.graduate(Life.AcademyTrack.FIELD) && child.canStart(Missions.COURIER), "assessment unlocks missions");
         for (int i = 0; i < 24; i++) {
             Life.SeasonEvent event = child.seasonalEvent();
             same.season = child.season;
@@ -390,6 +402,85 @@ final class LifeCheck {
         check(master.get(Stat.HEALTH) == hp - 5 && !master.castManifestation(eye), "guardian halves the counter once per duel");
         check(master.duel(Life.Move.STRIKE) && master.guardianTurns == 0 && master.get(Stat.HEALTH) == hp - 10,
                 "guardian halves a second counter");
+    }
+
+    private static void auditRegressions() {
+        for (int seed = 0; seed < 100; seed++) {
+            Life child = Life.rollNewLife("Ren", Life.LEAF, 1, 1, new int[10], 0, new Random(seed));
+            Set<String> names = new HashSet<>();
+            for (Life.Interest resident : child.residents()) {
+                if (resident.village != Life.LEAF) continue;
+                check(names.add(resident.name), "distinct names in one village");
+                if (child.villageLeader().equals(resident.name + " · Hokage")) {
+                    check(child.residentAge(resident) >= 18, "Hokage is an adult");
+                }
+            }
+        }
+        Life life = Life.rollNewLife("Ren", Life.LEAF, 1, 1, new int[10], 0, new Random(9));
+        life.bonds[0] = 80;
+        check(life.allyFavor(0) && life.journal.get(0).title().endsWith(life.contactName(0)), "favor uses actual guardian");
+        for (int i = 0; i < 100; i++) life.advance();
+        check(life.journal.stream().anyMatch(event -> event.title().equals("Born in Hidden Leaf")), "birth survives journal pruning");
+
+        Life injured = Life.begin("Ren", 0, Life.LEAF, 1, new int[10]);
+        injured.add(Stat.HEALTH, 20 - injured.get(Stat.HEALTH));
+        check(injured.escortShortcut() && injured.get(Stat.HEALTH) == 0 && injured.rescueVillage == Life.LEAF,
+                "risky escort can cause injury and open a rescue");
+        check(!injured.take(Missions.COURIER, false) && !injured.rescueCaravan(), "0 Health blocks field work");
+        injured.advance();
+        check(!injured.canStart(Missions.CARAVAN) && !injured.rescueCaravan(), "recover before the rescue");
+        check(injured.rest() && injured.visitVillage(0) && !injured.rescueCaravan(), "rescue requires the right village");
+        check(injured.visitVillage(Life.LEAF) && injured.rescueCaravan() && !injured.rescueCaravan(), "rescue completes once");
+        injured.advance();
+        check(injured.canStart(Missions.CARAVAN), "rescue reopens route");
+
+        Life courier = start(0, 1);
+        Life.CourierLead first = courier.courierLead();
+        int purse = courier.get(Stat.COINS);
+        check(courier.followCourierLead() && courier.get(Stat.COINS) == purse, "unprepared lead pays nothing");
+        courier.advance();
+        check(courier.courierLead() != first, "courier conditions change");
+        courier.add(Stat.SKILL, 30);
+        check(courier.followCourierLead() && courier.get(Stat.COINS) == purse + Missions.COURIER.coins + 45,
+                "prepared lead pays a bonus");
+        Set<Life.SeasonEvent> events = new HashSet<>();
+        for (int i = 0; i < Life.SeasonEvent.values().length; i++) {
+            courier.season = i;
+            events.add(courier.seasonalEvent());
+        }
+        check(events.size() == 12, "twelve distinct scenarios in the first deck");
+
+        Life traveler = Life.rollNewLife("Ren", Life.LEAF, 1, 1, new int[10], 24, new Random(9));
+        Life.Interest date = traveler.residents()[41];
+        check(traveler.romance(date, Life.RomanceAction.INTRODUCE), "meet in home village");
+        traveler.affection[date.id] = 70;
+        traveler.advance();
+        check(traveler.visitVillage(0) && !traveler.romance(date, Life.RomanceAction.DINNER)
+                && traveler.romance(date, Life.RomanceAction.TALK), "letters work across villages and dates require travel");
+        traveler.advance();
+        check(traveler.visitVillage(Life.LEAF) && traveler.romance(date, Life.RomanceAction.DINNER), "date works after reunion");
+
+        Life parent = freshParent();
+        Life.Child heir = parent.children.get(0);
+        Life next = parent.succeed(heir);
+        check(next.age() == 5 && next.season == parent.season && next.worldSeed == parent.worldSeed,
+                "heir keeps exact age and world");
+        check(next.kin.stream().anyMatch(relative -> relative.name().equals("Rei") && relative.role().equals("Sibling")),
+                "heir retains sibling");
+        check(next.contactName(0).equals(parent.residents()[heir.otherParent()].name), "other parent is guardian");
+        check(!next.canStart(Missions.COURIER), "child heirs cannot take missions");
+    }
+
+    private static Life freshParent() {
+        Life parent = start(0, 1);
+        parent.partner = 0;
+        parent.affection[0] = 90;
+        check(parent.welcomeChild("Aki", new Random(1)), "first child");
+        for (int i = 0; i < 4; i++) parent.advance();
+        check(parent.welcomeChild("Rei", new Random(2)), "second child");
+        parent.deathAge = 23;
+        while (!parent.deceased) parent.advance();
+        return parent;
     }
 
     private static Life named(String name) {

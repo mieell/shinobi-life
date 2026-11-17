@@ -67,6 +67,21 @@ final class SaveGame {
             life.worldSeed = json.optLong("worldSeed", 31L * life.name.hashCode() + life.homeVillage);
             life.deathAge = json.optInt("deathAge", Math.max(life.deathAge, life.age() + 1));
             life.deceased = json.optBoolean("deceased");
+            life.graduated = json.optBoolean("graduated", life.age() >= Life.SHINOBI_AGE);
+            life.populationStartAge = json.optInt("populationStartAge", life.startAge);
+            life.populationStartSeason = bounded(json.optInt("populationStartSeason", life.generationStart), life.season);
+            life.populationBirthVillage = bounded(json.optInt("populationBirthVillage", life.homeVillage), Life.VILLAGES.length - 1);
+            life.peerResidents = json.optBoolean("peerResidents", json.optBoolean("variedContacts"));
+            life.fixedResidents = json.optBoolean("fixedResidents", life.generation == 1 && !life.peerResidents);
+            life.rescueVillage = indexOrMissing(json.optInt("rescueVillage", -1), Life.VILLAGES.length);
+            life.rescueSeason = bounded(json.optInt("rescueSeason"), life.season + 1);
+            JSONArray kin = json.optJSONArray("kin");
+            if (kin != null) for (int i = 0; i < kin.length(); i++) {
+                JSONObject relative = kin.getJSONObject(i);
+                life.kin.add(new Life.Kin(relative.getString("name"), relative.getString("role"),
+                        relative.getInt("born"), relative.optInt("died", -1),
+                        indexOrMissing(relative.optInt("residentId", -1), Life.RESIDENT_COUNT)));
+            }
             life.otherClan = bounded(json.optInt("otherClan", -1) + 1, Clans.ALL.length) - 1;
             life.inheritedEyes = json.has("inheritedEyes") ? json.optInt("inheritedEyes", -1) : -1;
             if (life.inheritedEyes >= 0) life.inheritedEyes &= eyeMask;
@@ -80,7 +95,8 @@ final class SaveGame {
                         bounded(child.optInt("clan"), Clans.ALL.length - 1),
                         bounded(child.optInt("otherClan", -1) + 1, Clans.ALL.length) - 1,
                         child.optInt("eyes") & eyeMask, bounded(child.optInt("born"), life.season),
-                        bounded(child.optInt("village"), Life.VILLAGES.length - 1)));
+                        bounded(child.optInt("village"), Life.VILLAGES.length - 1),
+                        indexOrMissing(child.optInt("otherParent", -1), Life.RESIDENT_COUNT)));
             }
             int partner = json.optInt("partner", -1);
             life.partner = partner >= 0 && partner < Life.RESIDENT_COUNT ? partner : -1;
@@ -131,7 +147,7 @@ final class SaveGame {
                 life.stats.put(stat, bounded(stats.optInt(stat.name()), stat == Clans.Stat.COINS ? Integer.MAX_VALUE : 100));
             }
             JSONArray journal = json.getJSONArray("journal");
-            for (int i = 0; i < Math.min(100, journal.length()); i++) {
+            for (int i = 0; i < journal.length(); i++) {
                 JSONObject event = journal.getJSONObject(i);
                 String title = event.getString("title");
                 life.journal.add(new Life.Event(event.getString("date"), title, event.getString("detail")));
@@ -202,6 +218,25 @@ final class SaveGame {
             json.put("worldSeed", life.worldSeed);
             json.put("deathAge", life.deathAge);
             json.put("deceased", life.deceased);
+            json.put("graduated", life.graduated);
+            json.put("populationStartAge", life.populationStartAge);
+            json.put("populationStartSeason", life.populationStartSeason);
+            json.put("populationBirthVillage", life.populationBirthVillage);
+            json.put("peerResidents", life.peerResidents);
+            json.put("fixedResidents", life.fixedResidents);
+            json.put("rescueVillage", life.rescueVillage);
+            json.put("rescueSeason", life.rescueSeason);
+            JSONArray kin = new JSONArray();
+            for (Life.Kin relative : life.kin) {
+                JSONObject entry = new JSONObject();
+                entry.put("name", relative.name());
+                entry.put("role", relative.role());
+                entry.put("born", relative.born());
+                entry.put("died", relative.died());
+                entry.put("residentId", relative.residentId());
+                kin.put(entry);
+            }
+            json.put("kin", kin);
             json.put("otherClan", life.otherClan);
             json.put("inheritedEyes", life.inheritedEyes);
             json.put("nextChildSeason", life.nextChildSeason);
@@ -215,6 +250,7 @@ final class SaveGame {
                 data.put("eyes", child.eyes());
                 data.put("born", child.born());
                 data.put("village", child.village());
+                data.put("otherParent", child.otherParent());
                 children.put(data);
             }
             json.put("children", children);
@@ -255,6 +291,10 @@ final class SaveGame {
         } catch (JSONException error) {
             throw new IllegalStateException("Could not encode saved life", error);
         }
+    }
+
+    private static int indexOrMissing(int id, int count) {
+        return id >= 0 && id < count ? id : -1;
     }
 
     private static int bounded(int value, int max) { return Math.max(0, Math.min(max, value)); }

@@ -153,6 +153,11 @@ public final class MainActivity extends Activity {
             message("Available from age 15.");
             return;
         }
+        if (!life.graduated && (next.equals("missions") || next.equals("summons"))) {
+            message("Pass your Genin assessment to unlock missions and summons.");
+            go("academy");
+            return;
+        }
         if (next.equals("residents") && life.age() < 3) {
             message("You can meet village residents at age 3.");
             return;
@@ -259,6 +264,7 @@ public final class MainActivity extends Activity {
         switch (page) {
             case "title" -> titlePage();
             case "life" -> lifePage();
+            case "milestones" -> milestonePage();
             case "village" -> villagePage();
             case "career" -> careerPage();
             case "academy" -> academyPage();
@@ -622,7 +628,7 @@ public final class MainActivity extends Activity {
         });
         body.addView(actions);
         gap(body, 8);
-        if (life.age() >= Life.ADULT_AGE) buttonIn(body, "Activities & travel", RED, BLUSH, () -> go("village"));
+        if (life.age() >= Life.SHINOBI_AGE) buttonIn(body, "Activities & travel", RED, BLUSH, () -> go("village"));
         gap(body, 7);
         LinearLayout offices = row();
         offices.addView(button("Academy", RED, WHITE, BORDER, () -> go("academy")),
@@ -690,8 +696,25 @@ public final class MainActivity extends Activity {
         if (life.journal.size() > firstEntry) {
             gap(body, 16);
             body.addView(text("Life journal", 23, INK, DISPLAY));
+            buttonIn(body, "View milestones", RED, BLUSH, () -> go("milestones"));
             gap(body, 8);
             appendJournal(firstEntry);
+        }
+    }
+
+    private void milestonePage() {
+        heading("Life milestones", "Birth, graduation, family, and major achievements.");
+        int shown = 0;
+        for (Life.Event event : life.journal) {
+            if (!Life.isMilestone(event.title())) continue;
+            journal(event);
+            if (++shown >= journalLimit) break;
+        }
+        if (shown == journalLimit && life.journal.stream().filter(event -> Life.isMilestone(event.title())).count() > shown) {
+            buttonIn(body, "Show older milestones", RED, BLUSH, () -> {
+                journalLimit += JOURNAL_BATCH;
+                refreshBody();
+            });
         }
     }
 
@@ -836,7 +859,7 @@ public final class MainActivity extends Activity {
 
     private void villagePage() {
         heading("Activities", life.village() + " · " + life.date() + " · " + life.get(Stat.STAMINA) + " stamina");
-        buttonIn(body, "Career · " + life.career.title, RED, BLUSH, () -> go("career"));
+        if (life.age() >= Life.ADULT_AGE) buttonIn(body, "Career · " + life.career.title, RED, BLUSH, () -> go("career"));
         gap(body, 7);
         buttonIn(body, "Meet village residents", PURPLE, LILAC, () -> go("residents"));
         gap(body, 7);
@@ -874,10 +897,19 @@ public final class MainActivity extends Activity {
 
     private void academyPage() {
         heading(life.village() + " Academy", life.rank() + " · " + life.academyCredits + " class credits");
-        boolean student = life.age() < Life.SHINOBI_AGE;
+        boolean student = !life.graduated;
         Life.AcademyRank next = life.nextRank();
         if (student) {
-            fact("Academy student", "Attend classes to build Skill. You'll become a Genin at age 15.");
+            fact("Genin assessment", "Age 15 · 2 class credits · 12 Skill. You have "
+                    + life.academyCredits + " credits and " + life.get(Stat.SKILL) + " Skill.");
+            if (life.canGraduate()) {
+                for (Life.AcademyTrack track : Life.AcademyTrack.values()) {
+                    buttonIn(body, "Graduate in " + track.title + " · +" + track.bonus + " " + track.stat.label, Color.WHITE, RED, () -> {
+                        if (life.graduate(track)) update();
+                    });
+                    gap(body, 8);
+                }
+            }
         } else if (next != null) {
             fact(next.title + " exam", life.examRequirements() + ". You have " + life.academyCredits + " credits, "
                     + life.get(Stat.SKILL) + " Skill, and " + life.victories + " duel wins.");
@@ -1016,6 +1048,18 @@ public final class MainActivity extends Activity {
             arenaBoard();
             return;
         }
+        if (life.rescueVillage >= 0) {
+            LinearLayout search = card(WHITE, 14);
+            search.addView(text("Find the missing caravan crew", 20, INK, DISPLAY));
+            search.addView(text("Rescue in " + Life.VILLAGES[life.rescueVillage] + " · +65 Coins · +8 Fame", 14, MUTED, BODY));
+            String blocker = life.rescueBlocker();
+            if (blocker.isEmpty()) buttonIn(search, "Lead the rescue", Color.WHITE, RED, () -> {
+                if (life.rescueCaravan()) update();
+            });
+            else search.addView(pill(blocker, RED, BLUSH));
+            body.addView(search);
+            gap(body, 9);
+        }
         for (Missions mission : Missions.values()) {
             if (mission == Missions.DUEL) continue;
             LinearLayout card = card(WHITE, 14);
@@ -1032,18 +1076,30 @@ public final class MainActivity extends Activity {
             card.addView(topRow);
             gap(card, 3);
             card.addView(text(mission.title, 21, INK, DISPLAY));
-            card.addView(text(mission.description, 14, MUTED, BODY));
+            card.addView(text(mission == Missions.COURIER ? life.courierLead().detail : mission.description, 14, MUTED, BODY));
             gap(card, 7);
             card.addView(text(mission.stamina + " stamina · " + mission.coins + " coins · +" + mission.fame + " Fame", 13, GREEN, MEDIUM));
             gap(card, 7);
             if (life.isComplete(mission)) card.addView(pill("Closed for this season", MUTED, PAPER));
             else if (!life.canStart(mission)) {
-                card.addView(pill(life.get(Stat.STAMINA) < mission.stamina ? "Low stamina" : "Needs 30 health", RED, BLUSH));
+                String blocker = mission == Missions.CARAVAN && life.rescueVillage >= 0 ? "Route closed until the crew is rescued"
+                        : life.get(Stat.STAMINA) < mission.stamina ? "Low stamina" : "Needs " + Life.FIELD_HEALTH + " Health";
+                card.addView(pill(blocker, RED, BLUSH));
             } else {
-                buttonIn(card, mission == Missions.CARAVAN ? "Choose escort route" : "Take assignment", RED, BLUSH, () -> {
+                String accept = mission == Missions.CARAVAN ? "Choose escort route"
+                        : mission == Missions.COURIER ? "Search with a village guide" : "Take assignment";
+                buttonIn(card, accept, RED, BLUSH, () -> {
                     if (mission == Missions.CARAVAN) escortRoutes();
                     else take(mission, false);
                 });
+                if (mission == Missions.COURIER) {
+                    Life.CourierLead lead = life.courierLead();
+                    card.addView(text("Risky lead · " + lead.requiredSkill + " Skill for the bonus. A failed search pays nothing.",
+                            13, MUTED, BODY));
+                    buttonIn(card, lead.choice, RED, WHITE, () -> {
+                        if (life.followCourierLead()) update();
+                    });
+                }
                 if (mission != Missions.DUEL && life.matches(mission)) {
                     Clans.Clan clan = life.clan();
                     gap(card, 5);
@@ -1109,7 +1165,7 @@ public final class MainActivity extends Activity {
                 : new String[]{"Main road", "Shortcut"};
         LinearLayout panel = column();
         inset(panel, 20, 6, 20, 5);
-        panel.addView(text("The merchant suggests a shortcut through Cedar Pass. At 22 Skill, the shortcut earns +65 coins and +5 Fame. Below 22 Skill, an ambush costs 20 Health and 45 coins from the reward.",
+        panel.addView(text("The merchant suggests a shortcut through Cedar Pass. At 22 Skill, the shortcut earns +65 coins and +5 Fame. Below 22 Skill, an ambush costs 20 Health and 45 coins from the reward, and the missing crew will need a rescue.",
                 15, INK, BODY));
         if (canScout) panel.addView(text("Scouting avoids the ambush and earns +30 coins and +3 Fame.", 14, GREEN, MEDIUM));
         AlertDialog dialog = new AlertDialog.Builder(this).setTitle("A dangerous shortcut")
@@ -1500,7 +1556,7 @@ public final class MainActivity extends Activity {
 
     private Portrait romancePortrait(Life.Interest interest) {
         int[] appearance;
-        if (interest.id < ROMANCE_STYLE.length && life.generation == 1 && !life.variedContacts) {
+        if (interest.id < ROMANCE_STYLE.length && life.fixedResidents) {
             appearance = ROMANCE_STYLE[interest.id];
         } else {
             Random random = new Random(life.worldSeed ^ (interest.id * 0x9e3779b97f4a7c15L));
@@ -1568,7 +1624,7 @@ public final class MainActivity extends Activity {
             buttonIn(body, "Family & children", PURPLE, LILAC, () -> go("family"));
             gap(body, 8);
         }
-        boolean friendshipOnly = residentDirectory || life.age() < Life.ADULT_AGE
+        boolean friendshipOnly = residentDirectory || life.isRelative(interest) || life.age() < Life.ADULT_AGE
                 || life.residentAge(interest) < Life.ADULT_AGE || (life.partner >= 0 && !life.isPartner(interest));
         if (friendshipOnly) {
             body.addView(pill("Getting acquainted", MUTED, PAPER));
@@ -1620,6 +1676,13 @@ public final class MainActivity extends Activity {
                 gap(body, 10);
             } else fact("Growing your family", blocker);
         }
+        if (!life.kin.isEmpty()) {
+            body.addView(text("Parents and relatives", 21, INK, DISPLAY));
+            for (Life.Kin relative : life.kin) {
+                fact(relative.name(), relative.role() + " · " + (relative.died() < 0 ? "Age " : "Died at age ")
+                        + life.kinAge(relative));
+            }
+        }
         for (Life.Child child : life.children) {
             LinearLayout panel = card(WHITE, 13);
             panel.addView(text(child.name(), 21, INK, DISPLAY));
@@ -1655,9 +1718,9 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseHeir(Life.Child child) {
-        String age = life.childAge(child) < 18 ? "The story jumps forward until " + child.name() + " turns 18. " : "";
+        String age = child.name() + " will take over at age " + life.childAge(child) + ". ";
         new AlertDialog.Builder(this).setTitle("Continue as " + child.name() + "?")
-                .setMessage(age + "Your heir inherits half the estate and keeps the family journal. This choice continues only their branch of the family.")
+                .setMessage(age + "Your heir inherits half the estate and keeps the family journal, relatives, and village history.")
                 .setNegativeButton("Back", null)
                 .setPositiveButton("Continue", (dialog, which) -> {
                     Life successor = life.succeed(child);
@@ -1677,12 +1740,14 @@ public final class MainActivity extends Activity {
         if (gain > 0) cost += (cost.isEmpty() ? "" : " · ") + "+" + gain + " Affection";
         if (!cost.isEmpty()) row.addView(text(cost, 13, MUTED, MEDIUM));
         String blocker = life.romanceBlocker(interest, action);
+        String actionLabel = action == Life.RomanceAction.TALK && interest.village >= 0 && interest.village != life.village
+                ? "Exchange letters" : action.label;
         if (blocker.isEmpty()) {
-            buttonIn(row, action.label, Color.WHITE, RED, () -> {
+            buttonIn(row, actionLabel, Color.WHITE, RED, () -> {
                 if (life.romance(interest, action)) update();
             });
         } else {
-            row.addView(text(action.label, 16, INK, DISPLAY));
+            row.addView(text(actionLabel, 16, INK, DISPLAY));
             row.addView(pill(blocker, MUTED, PAPER));
         }
         body.addView(row);
@@ -1690,6 +1755,8 @@ public final class MainActivity extends Activity {
     }
 
     private Portrait contactPortrait(int contact) {
+        Life.Kin parent = contact == 0 ? life.guardianParent() : null;
+        if (parent != null && parent.residentId() >= 0) return romancePortrait(life.residents()[parent.residentId()]);
         int[] hues = {0xFFE9CDBA, 0xFFCBDED2, 0xFFDFCEE9};
         int[] style = CONTACT_STYLE[contact];
         if (life.variedContacts) {

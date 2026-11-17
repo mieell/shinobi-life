@@ -2,7 +2,9 @@ package com.shinobilife.game;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Random;
 
 import static com.shinobilife.game.Clans.Stat;
@@ -114,12 +116,25 @@ final class Life {
     }
 
     private Interest[] residents;
+    int populationStartAge = 18, populationStartSeason, populationBirthVillage;
+    boolean fixedResidents = true, peerResidents;
+    final List<Kin> kin = new ArrayList<>();
+    record Kin(String name, String role, int born, int died, int residentId) {}
+
+    int kinAge(Kin relative) {
+        if (relative.died() < 0 && relative.residentId() >= 0) return residentAge(residents()[relative.residentId()]);
+        return ((relative.died() < 0 ? season : relative.died()) - relative.born()) / SEASONS.length;
+    }
+
+    boolean isRelative(Interest interest) {
+        return kin.stream().anyMatch(relative -> relative.residentId() == interest.id);
+    }
     long worldSeed = new Random().nextLong();
 
     Interest[] residents() {
         if (residents != null) return residents;
         residents = new Interest[RESIDENT_COUNT];
-        if (generation == 1 && !variedContacts) {
+        if (fixedResidents) {
             residents[0] = Interest.EMI; residents[1] = Interest.HARU;
             residents[2] = Interest.RENKA; residents[3] = Interest.YUNA;
         }
@@ -127,24 +142,31 @@ final class Life {
         String[] jobs = {"Seal maker", "Academy aide", "Shopkeeper", "Courier", "Medic", "Gardener", "Scout", "Potter"};
         RomanceAction[] dates = {RomanceAction.TALK, RomanceAction.WALK, RomanceAction.DINNER};
         String[] likes = {"enjoys sharing stories", "likes evenings by the lanterns", "prefers a quiet dinner"};
+        Set<String> names = new HashSet<>();
+        for (Interest resident : residents) if (resident != null) names.add(resident.village + ":" + resident.name);
         for (int i = 0; i < residents.length; i++) {
             if (residents[i] != null) continue;
             int village = i < 4 ? -1 : (i - 4) / RESIDENTS_PER_VILLAGE;
-            int familyVillage = village < 0 ? homeVillage : village;
+            int familyVillage = village < 0 ? populationBirthVillage : village;
             int clan = rollClan(familyVillage, random);
             String given = RESIDENT_GIVEN[random.nextInt(RESIDENT_GIVEN.length)];
             String surname = RESIDENT_SURNAMES[random.nextInt(RESIDENT_SURNAMES.length)];
             String job = jobs[random.nextInt(jobs.length)];
             int taste = random.nextInt(dates.length);
-            residents[i] = new Interest(i, given + " " + surname, GENDERS[1 + random.nextInt(3)],
+            String fullName = given + " " + surname;
+            String uniqueName = fullName;
+            int suffix = 2;
+            while (!names.add(village + ":" + uniqueName)) uniqueName = fullName + " " + suffix++;
+            residents[i] = new Interest(i, uniqueName, GENDERS[1 + random.nextInt(3)],
                     job + " who " + likes[taste] + ".", dates[taste], random.nextInt(11) - 2, clan, village);
         }
         return residents;
     }
 
     int residentAge(Interest interest) {
-        if (variedContacts && interest.id % 3 != 0) return Math.max(0, age() + interest.ageOffset);
-        return Math.max(18, 18 + interest.ageOffset + (season - generationStart) / SEASONS.length);
+        int years = (season - populationStartSeason) / SEASONS.length;
+        if (peerResidents && interest.id % 3 != 0) return Math.max(0, populationStartAge + years + interest.ageOffset);
+        return Math.max(18, 18 + interest.ageOffset + years);
     }
 
     enum RomanceAction {
@@ -172,6 +194,7 @@ final class Life {
     boolean isPartner(Interest interest) { return partner == interest.ordinal(); }
 
     String romanceStatus(Interest interest, boolean residentsOnly) {
+        if (isRelative(interest)) return "Family";
         if (isPartner(interest)) return married ? "Spouse" : "Partner";
         int value = affection(interest);
         if (residentsOnly || residentAge(interest) < ADULT_AGE) return value == 0 ? "New face" : "Acquaintance";
@@ -187,6 +210,11 @@ final class Life {
             return "Both people must be at least 18 to date.";
         if (age() < 3) return "You can meet village residents at age 3.";
         if (enemyHp > 0) return "Finish your active duel first.";
+        boolean social = action == RomanceAction.INTRODUCE || action == RomanceAction.TALK;
+        if (isRelative(interest) && !social) return "This resident is part of your family.";
+        if (interest.village >= 0 && interest.village != village
+                && (action != RomanceAction.TALK || affection(interest) == 0))
+            return "Travel to " + VILLAGES[interest.village] + " to meet in person.";
         if (partner >= 0 && !isPartner(interest) && action != RomanceAction.INTRODUCE && action != RomanceAction.TALK)
             return "You are already in an exclusive relationship.";
         if (romanceVisited(interest)) return "You already spent time together this season.";
@@ -219,7 +247,8 @@ final class Life {
             int gained = Math.min(100 - affection(interest), romanceGain(interest, action));
             affection[interest.ordinal()] += gained;
             note(action == RomanceAction.INTRODUCE ? "Met " + interest.name : "Time with " + interest.name,
-                    action.label + " · +" + gained + " Affection and +" + action.mood + " Happiness.");
+                    (action == RomanceAction.TALK && interest.village >= 0 && interest.village != village
+                            ? "You exchanged letters" : action.label) + " · +" + gained + " Affection and +" + action.mood + " Happiness.");
         }
         return true;
     }
@@ -354,7 +383,7 @@ final class Life {
     int nextChildSeason;
     boolean deceased;
     static final int CHILD_COST = 80;
-    record Child(String name, int gender, int clan, int otherClan, int eyes, int born, int village) {}
+    record Child(String name, int gender, int clan, int otherClan, int eyes, int born, int village, int otherParent) {}
     final List<Child> children = new ArrayList<>();
     int otherClan = -1;
 
@@ -387,7 +416,7 @@ final class Life {
         int secondary = primaryFromPlayer ? parent.clan : clan;
         int eyes = inheritEyes(heritageEyes(), parent.eyes(), random);
         Child child = new Child(childName.trim(), 1 + random.nextInt(3), primary, secondary == primary ? -1 : secondary,
-                eyes, season, village);
+                eyes, season, village, parent.id);
         children.add(child);
         add(Stat.COINS, -CHILD_COST);
         add(Stat.MOOD, 12);
@@ -406,9 +435,29 @@ final class Life {
         next.otherClan = child.otherClan();
         next.inheritedEyes = child.eyes();
         next.generation = generation + 1;
-        next.season = Math.max(season, child.born() + 72);
-        next.generationStart = next.season;
-        next.startAge = Math.max(18, childAge(child));
+        next.season = season;
+        next.startAge = childAge(child);
+        next.generationStart = child.born() + next.startAge * SEASONS.length;
+        next.graduated = next.startAge >= SHINOBI_AGE;
+        if (!next.graduated) next.stats.put(Stat.SKILL, next.startAge < 6 ? 0 : next.get(Stat.SKILL));
+        next.worldSeed = worldSeed;
+        next.fixedResidents = fixedResidents;
+        next.peerResidents = peerResidents;
+        next.populationStartSeason = populationStartSeason;
+        next.populationStartAge = populationStartAge;
+        next.populationBirthVillage = populationBirthVillage;
+        next.variedContacts = true;
+        next.kin.addAll(kin);
+        next.kin.add(new Kin(name, "Parent", generationStart - startAge * SEASONS.length, season, -1));
+        next.guardian = Math.floorMod((int) (worldSeed ^ next.generation * 71L), GUARDIANS.length);
+        if (child.otherParent() >= 0) {
+            Interest otherParent = residents()[child.otherParent()];
+            next.kin.add(new Kin(otherParent.name, "Parent", season - residentAge(otherParent) * SEASONS.length, -1, otherParent.id));
+            next.affection[otherParent.id] = 60;
+        }
+        for (Child sibling : children) {
+            if (!sibling.equals(child)) next.kin.add(new Kin(sibling.name(), "Sibling", sibling.born(), -1, -1));
+        }
         next.deathAge = Math.max(next.deathAge, next.startAge + 4);
         next.borderTension = borderTension;
         next.leafAtWar = leafAtWar;
@@ -416,6 +465,8 @@ final class Life {
         next.warEffort = warEffort;
         next.leafTreasury = leafTreasury;
         next.leafStability = leafStability;
+        next.rescueVillage = rescueVillage;
+        next.rescueSeason = rescueSeason;
         next.add(Stat.COINS, get(Stat.COINS) / 2);
         next.journal.clear();
         next.journal.addAll(journal);
@@ -429,7 +480,7 @@ final class Life {
         Life life = new Life();
         life.name = name;
         life.clan = clan;
-        life.village = life.homeVillage = village;
+        life.village = life.homeVillage = life.populationBirthVillage = village;
         life.presence = presence;
         System.arraycopy(style, 0, life.style, 0, Math.min(style.length, life.style.length));
         life.stats.put(Stat.HEALTH, 82);
@@ -464,8 +515,10 @@ final class Life {
         int clan = rollClan(village, random);
         Life life = begin(name, clan, village, presence, style);
         life.gender = gender;
-        life.startAge = age;
-        life.variedContacts = true;
+        life.startAge = life.populationStartAge = age;
+        life.graduated = age >= SHINOBI_AGE;
+        life.variedContacts = life.peerResidents = true;
+        life.fixedResidents = false;
         life.worldSeed = random.nextLong();
         life.deathAge = 72 + new Random(life.worldSeed).nextInt(25);
         if (age < 6) life.stats.put(Stat.SKILL, life.clan().perk() == Stat.SKILL ? life.clan().start() : 0);
@@ -492,16 +545,30 @@ final class Life {
     }
 
     String contactName(int contact) {
-        if (contact == 0) return GUARDIANS[guardian];
+        if (contact == 0) {
+            Kin parent = guardianParent();
+            return parent == null ? GUARDIANS[guardian] : parent.name();
+        }
         if (!variedContacts) return CONTACTS[contact];
-        int index = Math.floorMod((int) (worldSeed >>> (contact * 13)), RESIDENT_GIVEN.length / 2);
-        int surname = Math.floorMod((int) (worldSeed >>> (contact * 7)), RESIDENT_SURNAMES.length);
+        long contactSeed = worldSeed ^ (0x9e3779b97f4a7c15L * (generation - 1));
+        int index = Math.floorMod((int) (contactSeed >>> (contact * 13)), RESIDENT_GIVEN.length / 2);
+        int surname = Math.floorMod((int) (contactSeed >>> (contact * 7)), RESIDENT_SURNAMES.length);
         return RESIDENT_GIVEN[index * 2 + contact - 1] + " " + RESIDENT_SURNAMES[surname];
     }
 
     boolean knowsContact(int contact) { return contact == 0 || age() >= (contact == 1 ? 3 : 6); }
 
+    Kin guardianParent() {
+        for (int i = kin.size() - 1; i >= 0; i--) {
+            Kin relative = kin.get(i);
+            if (relative.role().equals("Parent")) return relative.died() < 0 ? relative : null;
+        }
+        return null;
+    }
+
     int contactAge(int contact) {
+        Kin parent = contact == 0 ? guardianParent() : null;
+        if (parent != null) return kinAge(parent);
         if (!variedContacts) return contact == 0 ? age() + 20 : age();
         int offset = new Random(worldSeed ^ (0x9e3779b97f4a7c15L * (contact + 1))).nextInt(contact == 0 ? 19 : 5);
         return age() + (contact == 0 ? 20 + offset : offset - 2);
@@ -509,7 +576,7 @@ final class Life {
 
     String contactHistory(int contact) {
         String name = contactName(contact);
-        if (contact == 0) return name + " helped raise you in " + VILLAGES[homeVillage] + ".";
+        if (contact == 0) return name + " is part of your household in " + VILLAGES[homeVillage] + ".";
         if (contact == 1) return name + (age() < 6 ? " grew up playing with you near home." :
                 " was one of your first friends in " + VILLAGES[homeVillage] + ".");
         return name + " first challenged you during an academy drill.";
@@ -554,6 +621,64 @@ final class Life {
         return true;
     }
 
+    static final int FIELD_HEALTH = 20, RESCUE_STAMINA = 18;
+    int rescueVillage = -1, rescueSeason;
+
+    String rescueBlocker() {
+        if (rescueVillage < 0 || deceased || enemyHp > 0) return "No rescue is open.";
+        if (season < rescueSeason) return "The search party leaves next season.";
+        if (village != rescueVillage) return "Return to " + VILLAGES[rescueVillage] + " to organize the search.";
+        if (get(Stat.HEALTH) < FIELD_HEALTH || get(Stat.STAMINA) < RESCUE_STAMINA)
+            return "Requires 20 Health and 18 Stamina.";
+        return "";
+    }
+
+    boolean rescueCaravan() {
+        if (!rescueBlocker().isEmpty()) return false;
+        add(Stat.STAMINA, -RESCUE_STAMINA);
+        add(Stat.COINS, 65);
+        add(Stat.FAME, 8);
+        rescueVillage = -1;
+        completed |= Missions.CARAVAN.mask();
+        scoutedMissions |= Missions.CARAVAN.mask();
+        note("Rescued the missing caravan crew", "You brought the missing crew home and reopened the caravan route. +65 Coins and +8 Fame.");
+        return true;
+    }
+
+    enum CourierLead {
+        FOG("Follow tracks through the fog", "The courier vanished along a foggy lantern road.", 18),
+        FLOOD("Cross the flooded ford", "The courier missed a rendezvous after the river rose.", 24),
+        RIDGE("Search the ridge trail", "A rockslide cut the courier off from the village.", 30);
+
+        final String choice, detail;
+        final int requiredSkill;
+        CourierLead(String choice, String detail, int requiredSkill) {
+            this.choice = choice; this.detail = detail; this.requiredSkill = requiredSkill;
+        }
+    }
+
+    CourierLead courierLead() {
+        CourierLead[] leads = CourierLead.values();
+        return leads[(season % leads.length + (int) (worldSeed & 255)) % leads.length];
+    }
+
+    boolean followCourierLead() {
+        if (!canStart(Missions.COURIER)) return false;
+        CourierLead lead = courierLead();
+        if (get(Stat.SKILL) < lead.requiredSkill) {
+            completed |= Missions.COURIER.mask();
+            add(Stat.STAMINA, -Missions.COURIER.stamina);
+            add(Stat.HEALTH, -12);
+            note("Courier search failed", "The trail went cold before you found the courier. No reward. −12 Health.");
+            return true;
+        }
+        if (!take(Missions.COURIER, false)) return false;
+        add(Stat.COINS, 45);
+        add(Stat.FAME, 4);
+        note("Reached the courier before nightfall", lead.choice + " paid off. +45 Coins and +4 Fame.");
+        return true;
+    }
+
     boolean escortWithScout() {
         if (!hasSummon(Summon.SHRIKE) || get(Stat.CHAKRA) < Summon.MISSION_CHAKRA
                 || !take(Missions.CARAVAN, false)) return false;
@@ -566,15 +691,20 @@ final class Life {
 
     boolean escortShortcut() {
         boolean prepared = get(Stat.SKILL) >= 22;
-        if (!take(Missions.CARAVAN, false)) return false;
+        if (!canStart(Missions.CARAVAN)) return false;
         if (prepared) {
+            take(Missions.CARAVAN, false);
             add(Stat.COINS, 65);
             add(Stat.FAME, 5);
             note("Shortcut secured", "You spotted the ambush early and got the caravan through. +65 Coins and +5 Fame.");
         } else {
+            completed |= Missions.CARAVAN.mask();
+            add(Stat.STAMINA, -Missions.CARAVAN.stamina);
             add(Stat.HEALTH, -20);
-            add(Stat.COINS, -45);
-            note("Caravan ambushed", "You got the caravan through, but were injured and lost part of the payment. −20 Health and −45 Coins.");
+            add(Stat.COINS, Missions.CARAVAN.coins - 45);
+            rescueVillage = village;
+            rescueSeason = season + 1;
+            note("Caravan ambushed", "Some crew members are missing. The mission board opens a rescue next season. −20 Health and −45 Coins from the reward.");
         }
         return true;
     }
@@ -603,11 +733,39 @@ final class Life {
     static final int LESSON_STAMINA = 10, LEAF = 3;
     AcademyRank academyRank = AcademyRank.GENIN;
     int academyCredits;
+    boolean graduated = true;
+
+    enum AcademyTrack {
+        FIELD("Field track", Stat.SKILL, 3),
+        SERVICE("Village service track", Stat.FAME, 7);
+
+        final String title;
+        final Stat stat;
+        final int bonus;
+
+        AcademyTrack(String title, Stat stat, int bonus) {
+            this.title = title; this.stat = stat; this.bonus = bonus;
+        }
+    }
+
+    boolean canGraduate() {
+        return !graduated && age() >= SHINOBI_AGE && !deceased && enemyHp == 0 && academyCredits >= 2 && get(Stat.SKILL) >= 12;
+    }
+
+    boolean graduate(AcademyTrack track) {
+        if (!canGraduate()) return false;
+        graduated = true;
+        academyCredits -= 2;
+        add(track.stat, track.bonus);
+        note("Graduated as Genin", track.title + " · +" + track.bonus + " " + track.stat.label
+                + ". Missions, summon contracts, and bloodline training are now open.");
+        return true;
+    }
     boolean attendedClass, campaigned, governed, warService;
 
     String rank() {
         if (age() < 6) return "Child";
-        if (age() < SHINOBI_AGE) return "Academy student";
+        if (!graduated || age() < SHINOBI_AGE) return "Academy student";
         return hokage ? "Hokage" : academyRank.title;
     }
 
@@ -637,7 +795,7 @@ final class Life {
     }
 
     boolean canTakeExam() {
-        if (age() < SHINOBI_AGE || deceased || enemyHp > 0 || nextRank() == null) return false;
+        if (age() < SHINOBI_AGE || !graduated || deceased || enemyHp > 0 || nextRank() == null) return false;
         boolean first = academyRank == AcademyRank.GENIN;
         return academyCredits >= (first ? 2 : 3) && get(Stat.SKILL) >= (first ? 22 : 35)
                 && victories >= (first ? 1 : 3) && get(Stat.STAMINA) >= (first ? 16 : 22);
@@ -663,8 +821,12 @@ final class Life {
 
     String villageLeader() {
         if (village == LEAF && hokage) return name + " · Hokage";
-        int index = 4 + village * RESIDENTS_PER_VILLAGE + (season / 16) % RESIDENTS_PER_VILLAGE;
-        return residents()[index].name + (village == LEAF ? " · Hokage" : " · Village head");
+        int start = 4 + village * RESIDENTS_PER_VILLAGE;
+        for (int i = 0; i < RESIDENTS_PER_VILLAGE; i++) {
+            Interest candidate = residents()[start + (season / 16 + i) % RESIDENTS_PER_VILLAGE];
+            if (residentAge(candidate) >= ADULT_AGE) return candidate.name + (village == LEAF ? " · Hokage" : " · Village head");
+        }
+        return VILLAGES[village] + " council · Interim leadership";
     }
 
     boolean campaign() {
@@ -678,7 +840,7 @@ final class Life {
     }
 
     boolean canRunForHokage() {
-        return age() >= ADULT_AGE && !deceased && enemyHp == 0 && village == LEAF && !hokage && academyRank == AcademyRank.JONIN
+        return age() >= ADULT_AGE && graduated && !deceased && enemyHp == 0 && village == LEAF && !hokage && academyRank == AcademyRank.JONIN
                 && get(Stat.FAME) >= 55 && electionSupport() >= 60;
     }
 
@@ -823,7 +985,25 @@ final class Life {
                 new SeasonChoice("Buy seedlings", Stat.COINS, 25, Stat.MOOD, 13, "The first plants went in before sunset.")),
         EXHIBITION("A public demonstration", "Traveling students want to see how local shinobi train.",
                 new SeasonChoice("Demonstrate footwork", Stat.STAMINA, 14, Stat.FAME, 10, "The students repeated your drill and thanked you at the gate."),
-                new SeasonChoice("Join the practice", Stat.CHAKRA, 14, Stat.SKILL, 5, "Trading drills with the travelers sharpened your technique."));
+                new SeasonChoice("Join the practice", Stat.CHAKRA, 14, Stat.SKILL, 5, "Trading drills with the travelers sharpened your technique.")),
+        OUTAGE("The lamps go dark", "A storm knocked out the lanterns along the district's main road.",
+                new SeasonChoice("Relight the street", Stat.STAMINA, 10, Stat.FAME, 7, "You restored the lamps before the evening patrol."),
+                new SeasonChoice("Buy oil for the stalls", Stat.COINS, 30, Stat.BOND, 5, "The stallholders pooled their spare lanterns and kept the street open.")),
+        WATER("A dry well", "A courtyard well has stopped working and families are carrying water uphill.",
+                new SeasonChoice("Carry water", Stat.STAMINA, 14, Stat.BOND, 8, "You brought water to the courtyard before the queues grew."),
+                new SeasonChoice("Hire a repair crew", Stat.COINS, 45, Stat.FAME, 8, "The crew repaired the well before dusk.")),
+        LETTER("A misdelivered letter", "A letter from another village arrived at the wrong home.",
+                new SeasonChoice("Find the intended recipient", Stat.STAMINA, 8, Stat.FAME, 5, "You found the family before they left for the market."),
+                new SeasonChoice("Pay for return delivery", Stat.COINS, 18, Stat.MOOD, 9, "A courier agreed to carry the letter back on their next trip.")),
+        DOJO("Trouble at the dojo", "Two students disagree about whether their sparring match was fair.",
+                new SeasonChoice("Referee a rematch", Stat.STAMINA, 12, Stat.SKILL, 4, "Both students agreed to follow your calls, and you picked up a new drill."),
+                new SeasonChoice("Offer a private demonstration", Stat.CHAKRA, 16, Stat.FAME, 7, "You showed the class how to resolve the disputed move safely.")),
+        COLD("A sick neighbor", "A neighbor needs medicine while the village dispensary is short-staffed.",
+                new SeasonChoice("Fetch the medicine", Stat.STAMINA, 10, Stat.BOND, 7, "You reached the dispensary before it closed."),
+                new SeasonChoice("Pay for a house visit", Stat.COINS, 30, Stat.MOOD, 12, "The medic arrived and your neighbor was able to rest.")),
+        WORKSHOP("An apprentice's first order", "A potter asks for help finishing a large order before the next caravan arrives.",
+                new SeasonChoice("Help finish the order", Stat.STAMINA, 14, Stat.COINS, 75, "The order shipped on time and the apprentice shared the pay."),
+                new SeasonChoice("Buy extra materials", Stat.COINS, 28, Stat.FAME, 6, "The extra supplies gave the apprentice time to replace the cracked pieces."));
 
         final String title, situation;
         final SeasonChoice[] choices;
@@ -938,7 +1118,22 @@ final class Life {
 
     void note(String title, String detail) {
         journal.add(0, new Event(date(), title, detail));
-        if (journal.size() > 100) journal.remove(journal.size() - 1);
+        int routine = 0;
+        for (int i = 0; i < journal.size(); i++) {
+            if (!isMilestone(journal.get(i).title()) && ++routine > 100) {
+                journal.remove(i);
+                break;
+            }
+        }
+    }
+
+    static boolean isMilestone(String title) {
+        return title.startsWith("Born in ") || title.startsWith("Your roots in ") || title.startsWith("Generation ")
+                || title.startsWith("Welcomed ") || title.startsWith("Married ") || title.startsWith("Divorced ")
+                || title.startsWith("Promoted to ") || title.startsWith("Awakened the ") || title.endsWith(" awakened")
+                || title.endsWith(" passed away") || title.equals("A fresh start") || title.equals("A life of your own")
+                || title.equals("First day at the academy") || title.equals("Became a Genin")
+                || title.equals("Graduated as Genin") || title.equals("Genin assessment opens") || title.equals("Reached adulthood") || title.equals("Elected Hokage");
     }
 
     void advance() {
@@ -975,7 +1170,7 @@ final class Life {
         if ((season - generationStart) % 4 == 0) {
             switch (age()) {
                 case 6 -> note("First day at the academy", "You can attend classes and start earning credits.");
-                case SHINOBI_AGE -> note("Became a Genin", "The mission board, duels, and inherited eye training are open.");
+                case SHINOBI_AGE -> note("Genin assessment opens", "Pass the academy assessment with 2 class credits and 12 Skill to become a Genin.");
                 case ADULT_AGE -> note("Reached adulthood", "Careers, dating, and starting a family are open.");
                 default -> {
                     if (age() < SHINOBI_AGE && age() > 0) childhoodMemory();
@@ -1086,17 +1281,17 @@ final class Life {
             case 0 -> {
                 add(Stat.STAMINA, 16);
                 add(Stat.HEALTH, 12);
-                note("Home cooking with Nao", "Nao packed spiced rice balls and ginger tea for the road. +16 Stamina and +12 Health.");
+                note("Home cooking with " + contactName(contact), contactName(contact) + " packed spiced rice balls and ginger tea for the road. +16 Stamina and +12 Health.");
             }
             case 1 -> {
                 add(Stat.COINS, 40);
                 add(Stat.CHAKRA, 12);
-                note("Jun's market tip", "Jun pointed out an unguarded courier shortcut and split the bonus. +40 Coins and +12 Chakra.");
+                note(contactName(contact) + "’s market tip", contactName(contact) + " pointed out an unguarded courier shortcut and split the bonus. +40 Coins and +12 Chakra.");
             }
             case 2 -> {
                 add(Stat.SKILL, 2);
                 add(Stat.FAME, 5);
-                note("Rooftop spar with Mika", "You drew a crowd trading footwork on the academy roof. +2 Skill and +5 Fame.");
+                note("Rooftop spar with " + contactName(contact), "You drew a crowd trading footwork on the academy roof. +2 Skill and +5 Fame.");
             }
         }
         return true;
@@ -1105,8 +1300,9 @@ final class Life {
     boolean isComplete(Missions mission) { return (completed & mission.mask()) != 0; }
 
     boolean canStart(Missions mission) {
-        return age() >= SHINOBI_AGE && enemyHp == 0 && !isComplete(mission) && get(Stat.STAMINA) >= mission.stamina
-                && (mission != Missions.DUEL || get(Stat.HEALTH) >= 30);
+        return graduated && age() >= SHINOBI_AGE && !deceased && enemyHp == 0 && !isComplete(mission)
+                && get(Stat.STAMINA) >= mission.stamina && get(Stat.HEALTH) >= (mission == Missions.DUEL ? 30 : FIELD_HEALTH)
+                && (mission != Missions.CARAVAN || rescueVillage < 0);
     }
 
     boolean matches(Missions mission) { return clan().role() == mission.role; }
@@ -1192,7 +1388,7 @@ final class Life {
     }
 
     boolean canAwakenEye(EyePower eye) {
-        return age() >= SHINOBI_AGE && eye != null && !deceased && (heritageEyes() & eye.mask()) != 0 && (awakenedEyes & eye.mask()) == 0
+        return age() >= SHINOBI_AGE && graduated && eye != null && !deceased && (heritageEyes() & eye.mask()) != 0 && (awakenedEyes & eye.mask()) == 0
                 && enemyHp == 0 && get(Stat.SKILL) >= eye.skill && victories >= eye.wins;
     }
 
