@@ -56,6 +56,7 @@ final class LifeCheck {
         distinctLives();
         clanMasteryAndEyeEvolution();
         auditRegressions();
+        stillwaterSeal();
         System.out.println("Life checks passed for 23 combat paths, three eye powers, five summons, meditation, gifts, favors, randomized origins, travel, escort branches, romance, mixed inheritance, succession, academy promotions, Hokage elections, war, truces, newborn progression, varied contacts, and evolved clan techniques.");
     }
 
@@ -481,6 +482,42 @@ final class LifeCheck {
         parent.deathAge = 23;
         while (!parent.deceased) parent.advance();
         return parent;
+    }
+
+    private static void stillwaterSeal() {
+        Life explorer = start(0, 1);
+        explorer.startAge = 40;
+        explorer.worldSeed = 0;
+        explorer.add(Stat.SKILL, 60);
+        check(!explorer.hasSealEncounter() && explorer.visitVillage(Life.STARWATCH), "archive only opens in Starwatch");
+        check(explorer.hasSealEncounter() && !explorer.bindSeal() && !explorer.resolveSeasonEvent(0), "rare encounter replaces current event");
+        check(explorer.decipherSeal() && !explorer.bindSeal(), "binding opens next season");
+        explorer.advance();
+        explorer.add(Stat.CHAKRA, -explorer.get(Stat.CHAKRA));
+        check(!explorer.bindSeal(), "insufficient chakra leaves the decision open");
+        explorer.add(Stat.CHAKRA, 60);
+        check(explorer.bindSeal() && explorer.ageless() && explorer.get(Stat.CHAKRA) == 0, "binding consumes chakra");
+        explorer.deathAge = 41;
+        explorer.advance();
+        check(explorer.get(Stat.CHAKRA) == 28, "ageless chakra upkeep");
+        for (int i = 0; i < 8; i++) explorer.advance();
+        check(explorer.age() > explorer.deathAge && !explorer.deceased, "bound seal prevents old age");
+        explorer.add(Stat.HEALTH, -100);
+        check(!explorer.ageless() && explorer.deathAge == explorer.age() + 1 && !explorer.deceased, "zero health breaks the seal");
+        while (!explorer.deceased) explorer.advance();
+
+        Life donor = Life.begin("Ren", 0, Life.STARWATCH, 1, new int[10]);
+        donor.startAge = 40;
+        donor.worldSeed = 1;
+        donor.add(Stat.SKILL, 60);
+        check(!donor.hasSealEncounter(), "discovery waits for its seasonal window");
+        donor.advance();
+        check(donor.decipherSeal(), "archive opens in the seeded season");
+        donor.advance();
+        donor.leafAtWar = true;
+        check(donor.donateSeal() && !donor.ageless() && donor.warEffort == 12, "wartime donation helps displaced families");
+        donor.advance();
+        check(!donor.hasSealEncounter(), "one outcome per life");
     }
 
     private static Life named(String name) {

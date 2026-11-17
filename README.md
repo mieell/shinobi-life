@@ -24,6 +24,10 @@ From age 15, the Life screen offers a shuffled choice from twelve scenarios each
 
 Open **Missions → Duel circuit** to challenge Ibara at Cedar Pass, Kana after reaching Chūnin, or Daichi after reaching Jōnin. Each opponent signals their next attack and follows a different pattern. Only one match is available each season. Cedar Pass wins qualify for exams and inherited eye awakenings.
 
+## The Stillwater Seal
+
+In Starwatch, a rare seasonal encounter opens from age 40 with at least 45 Skill. Decipher the seal for 12 Stamina, then return in a later season to bind it or donate it. Binding costs 60 Chakra and prevents death from old age. Your age counter keeps advancing. An ageless shinobi recovers 28 Chakra per season, and reaching zero Health breaks the seal. You can also release it from the Life screen. Donating the seal helps the clinic and adds war effort if Hidden Leaf is at war.
+
 ## Academy and village politics
 
 Open **Academy** from Life to take one class per season and earn exam credits. Starting at age 15, students with 2 class credits and 12 Skill can graduate. Choose field training for +3 Skill or village service for +7 Fame. Teen and adult starts skip the Genin assessment. Chūnin and Jōnin exams also require Skill, Cedar Pass wins, and stamina.

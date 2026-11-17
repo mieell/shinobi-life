@@ -382,6 +382,61 @@ final class Life {
     int deathAge = 72 + new Random(worldSeed).nextInt(25);
     int nextChildSeason;
     boolean deceased;
+
+    static final int STARWATCH = 2, SEAL_STAMINA = 12, SEAL_CHAKRA = 60, SEAL_UPKEEP = 20;
+    enum SealState { UNDISCOVERED, DECIPHERED, AGELESS, CLOSED }
+    SealState seal = SealState.UNDISCOVERED;
+
+    boolean ageless() { return seal == SealState.AGELESS; }
+
+    boolean hasSealEncounter() {
+        if (!hasSeasonEvent() || village != STARWATCH) return false;
+        if (seal == SealState.DECIPHERED) return true;
+        return seal == SealState.UNDISCOVERED && age() >= 40 && get(Stat.SKILL) >= 45
+                && season % SEASONS.length == Math.floorMod((int) worldSeed, SEASONS.length);
+    }
+
+    boolean decipherSeal() {
+        if (!hasSealEncounter() || seal != SealState.UNDISCOVERED || get(Stat.STAMINA) < SEAL_STAMINA) return false;
+        resolvedEvent = season;
+        seal = SealState.DECIPHERED;
+        add(Stat.STAMINA, -SEAL_STAMINA);
+        note("Deciphered the Stillwater Seal", "The archivist translated the markings. Return next season to decide what to do with the seal.");
+        return true;
+    }
+
+    boolean bindSeal() {
+        if (!hasSealEncounter() || seal != SealState.DECIPHERED || get(Stat.CHAKRA) < SEAL_CHAKRA) return false;
+        resolvedEvent = season;
+        seal = SealState.AGELESS;
+        add(Stat.CHAKRA, -SEAL_CHAKRA);
+        note("Bound the Stillwater Seal", "Old age can no longer end your life. The seal consumes 20 Chakra each season and breaks at 0 Health.");
+        return true;
+    }
+
+    boolean donateSeal() {
+        if (!hasSealEncounter() || seal != SealState.DECIPHERED) return false;
+        resolvedEvent = season;
+        seal = SealState.CLOSED;
+        add(Stat.FAME, 15);
+        add(Stat.MOOD, 12);
+        if (leafAtWar) {
+            warEffort = Math.min(60, warEffort + 12);
+            note("Donated the Stillwater Seal", "Starwatch shared the relic with medics treating families displaced by the war. +12 war effort, +15 Fame and +12 Happiness.");
+        } else {
+            note("Donated the Stillwater Seal", "Starwatch healers studied the relic to improve long-term care. +15 Fame and +12 Happiness.");
+        }
+        return true;
+    }
+
+    boolean releaseSeal(boolean broken) {
+        if (!ageless() || deceased || (!broken && enemyHp > 0)) return false;
+        seal = SealState.CLOSED;
+        deathAge = Math.max(deathAge, age() + 1);
+        note(broken ? "The Stillwater Seal shattered" : "Released the Stillwater Seal",
+                "Your lifespan is mortal again. Old age can end this life as early as your next birthday.");
+        return true;
+    }
     static final int CHILD_COST = 80;
     record Child(String name, int gender, int clan, int otherClan, int eyes, int born, int village, int otherParent) {}
     final List<Child> children = new ArrayList<>();
@@ -1040,7 +1095,7 @@ final class Life {
     boolean hasSeasonEvent() { return age() >= SHINOBI_AGE && !deceased && enemyHp == 0 && resolvedEvent != season; }
 
     boolean resolveSeasonEvent(int choice) {
-        if (!hasSeasonEvent() || choice < 0 || choice >= seasonalEvent().choices.length) return false;
+        if (!hasSeasonEvent() || hasSealEncounter() || choice < 0 || choice >= seasonalEvent().choices.length) return false;
         SeasonEvent event = seasonalEvent();
         SeasonChoice option = event.choices[choice];
         if (get(option.priceStat()) < option.price()) return false;
@@ -1113,7 +1168,9 @@ final class Life {
             return;
         }
         int cap = stat == Stat.COINS ? Integer.MAX_VALUE : 100;
-        stats.put(stat, (int) Math.max(0, Math.min(cap, (long) get(stat) + change)));
+        int value = (int) Math.max(0, Math.min(cap, (long) get(stat) + change));
+        stats.put(stat, value);
+        if (stat == Stat.HEALTH && value == 0 && change < 0) releaseSeal(true);
     }
 
     void note(String title, String detail) {
@@ -1133,13 +1190,13 @@ final class Life {
                 || title.startsWith("Promoted to ") || title.startsWith("Awakened the ") || title.endsWith(" awakened")
                 || title.endsWith(" passed away") || title.equals("A fresh start") || title.equals("A life of your own")
                 || title.equals("First day at the academy") || title.equals("Became a Genin")
-                || title.equals("Graduated as Genin") || title.equals("Genin assessment opens") || title.equals("Reached adulthood") || title.equals("Elected Hokage");
+                || title.contains("Stillwater Seal") || title.equals("Graduated as Genin") || title.equals("Genin assessment opens") || title.equals("Reached adulthood") || title.equals("Elected Hokage");
     }
 
     void advance() {
         if (deceased || enemyHp > 0) return;
         season++;
-        if (age() >= deathAge) {
+        if (!ageless() && age() >= deathAge) {
             deceased = true;
             note(name + " passed away", "Your life ended at age " + age() + ". "
                     + (children.isEmpty() ? "You had no heirs." : "Your children can carry on the family line."));
@@ -1150,7 +1207,7 @@ final class Life {
         attendedClass = campaigned = governed = warService = false;
         childhoodActions = 0;
         add(Stat.STAMINA, 45);
-        add(Stat.CHAKRA, 48);
+        add(Stat.CHAKRA, ageless() ? 48 - SEAL_UPKEEP : 48);
         add(Stat.HEALTH, 14);
         String[] moments = {
             "The cooks set up breakfast stalls outside the academy.",

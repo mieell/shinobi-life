@@ -63,10 +63,11 @@ final class SaveGame {
             int eyeMask = (1 << EyePower.values().length) - 1;
             life.generation = bounded(json.optInt("generation", 1), 100000);
             life.generationStart = bounded(json.optInt("generationStart"), life.season);
-            life.startAge = bounded(json.optInt("startAge", 18), 120);
+            life.startAge = Math.max(0, json.optInt("startAge", 18));
             life.worldSeed = json.optLong("worldSeed", 31L * life.name.hashCode() + life.homeVillage);
             life.deathAge = json.optInt("deathAge", Math.max(life.deathAge, life.age() + 1));
             life.deceased = json.optBoolean("deceased");
+            life.seal = Life.SealState.values()[bounded(json.optInt("stillwaterSeal"), Life.SealState.values().length - 1)];
             life.graduated = json.optBoolean("graduated", life.age() >= Life.SHINOBI_AGE);
             life.populationStartAge = json.optInt("populationStartAge", life.startAge);
             life.populationStartSeason = bounded(json.optInt("populationStartSeason", life.generationStart), life.season);
@@ -218,6 +219,7 @@ final class SaveGame {
             json.put("worldSeed", life.worldSeed);
             json.put("deathAge", life.deathAge);
             json.put("deceased", life.deceased);
+            json.put("stillwaterSeal", life.seal.ordinal());
             json.put("graduated", life.graduated);
             json.put("populationStartAge", life.populationStartAge);
             json.put("populationStartSeason", life.populationStartSeason);

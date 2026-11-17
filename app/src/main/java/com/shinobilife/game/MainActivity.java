@@ -129,7 +129,7 @@ public final class MainActivity extends Activity {
             case "detail" -> go("clans");
             case "clans" -> go(returnPage.equals("title") ? "title" : "life");
             case "career" -> go("village");
-            case "academy", "council", "season-event" -> go("life");
+            case "academy", "council", "season-event", "stillwater" -> go("life");
             case "person", "romance", "residents" -> go("people");
             case "date" -> go(residentDirectory ? "residents" : "romance");
             case "family" -> go("people");
@@ -269,6 +269,7 @@ public final class MainActivity extends Activity {
             case "career" -> careerPage();
             case "academy" -> academyPage();
             case "season-event" -> seasonEventPage();
+            case "stillwater" -> stillwaterPage();
             case "council" -> councilPage();
             case "missions" -> missionsPage();
             case "clans" -> clansPage();
@@ -594,7 +595,15 @@ public final class MainActivity extends Activity {
         body.addView(meters);
         gap(body, 9);
 
-        if (life.hasSeasonEvent()) {
+        if (life.ageless()) {
+            buttonIn(body, "Ageless · Stillwater Seal", PURPLE, LILAC, () -> go("stillwater"));
+            gap(body, 9);
+        }
+        if (life.hasSealEncounter()) {
+            buttonIn(body, life.seal == Life.SealState.UNDISCOVERED ? "The sealed archive" : "Decide the seal’s fate",
+                    Color.WHITE, RED, () -> go("stillwater"));
+            gap(body, 9);
+        } else if (life.hasSeasonEvent()) {
             seasonEventBanner();
             gap(body, 10);
         } else if (!life.journal.isEmpty()) {
@@ -761,6 +770,41 @@ public final class MainActivity extends Activity {
         panel.addView(text("›", 25, RED, DISPLAY));
         clickable(panel, WHITE, BORDER, () -> go("season-event"));
         body.addView(panel);
+    }
+
+    private void stillwaterPage() {
+        heading("The Stillwater Seal", life.village() + " · " + life.date());
+        if (life.ageless()) {
+            fact("Ageless", "Years still pass, but old age cannot end your life. You recover 28 Chakra per season instead of 48. The seal breaks if your Health reaches 0.");
+            buttonIn(body, "Release the seal", RED, BLUSH, () -> new AlertDialog.Builder(this)
+                    .setTitle("Return to a mortal lifespan?")
+                    .setMessage("If you have already outlived your natural lifespan, old age can end your life on your next birthday.")
+                    .setNegativeButton("Keep the seal", null)
+                    .setPositiveButton("Release", (dialog, choice) -> resolveStillwater(() -> life.releaseSeal(false))).show());
+        } else if (life.hasSealEncounter()) {
+            if (life.seal == Life.SealState.UNDISCOVERED) {
+                fact("The sealed archive", "A seasonal tide has exposed a chamber beneath Starwatch. The archivist asks you to decipher a seal rumored to halt aging.");
+                buttonIn(body, "Decipher the seal · " + Life.SEAL_STAMINA + " Stamina", Color.WHITE, RED,
+                        () -> resolveStillwater(life::decipherSeal));
+            } else {
+                fact("One charge remains", "The seal can stop old-age death, or Starwatch can use its remaining charge "
+                        + (life.leafAtWar ? "to treat families displaced by the war." : "to study long-term care."));
+                fact("Binding cost", Life.SEAL_CHAKRA + " Chakra now and " + Life.SEAL_UPKEEP
+                        + " Chakra per season. The seal breaks at 0 Health.");
+                buttonIn(body, "Bind the seal · Become ageless", Color.WHITE, RED, () -> resolveStillwater(life::bindSeal));
+                buttonIn(body, "Donate the seal to the clinic", PURPLE, LILAC, () -> resolveStillwater(life::donateSeal));
+            }
+        }
+        buttonIn(body, "Return to Life", RED, WHITE, () -> go("life"));
+    }
+
+    private void resolveStillwater(java.util.function.BooleanSupplier choice) {
+        if (!choice.getAsBoolean()) {
+            message("Check your Stamina or Chakra before trying again.");
+            return;
+        }
+        SaveGame.write(this, life);
+        go("life");
     }
 
     private void seasonEventPage() {
