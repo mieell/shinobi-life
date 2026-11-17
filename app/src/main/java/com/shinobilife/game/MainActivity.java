@@ -410,7 +410,7 @@ public final class MainActivity extends Activity {
         statStrip.addView(miniStat("Coins", money(life.get(Stat.COINS)), AMBER), new LinearLayout.LayoutParams(0, WRAP, 1));
         statStrip.addView(miniStat("Skill", Integer.toString(life.get(Stat.SKILL)), GREEN), new LinearLayout.LayoutParams(0, WRAP, 1));
         statStrip.addView(miniStat("Fame", Integer.toString(life.get(Stat.FAME)), RED), new LinearLayout.LayoutParams(0, WRAP, 1));
-        statStrip.addView(miniStat("Wins", Integer.toString(life.victories), PURPLE), new LinearLayout.LayoutParams(0, WRAP, 1));
+        statStrip.addView(miniStat("Wins", Integer.toString(life.victories + life.challengerWins), PURPLE), new LinearLayout.LayoutParams(0, WRAP, 1));
         details.addView(statStrip);
         heroRow.addView(details, new LinearLayout.LayoutParams(0, WRAP, 1));
         saveCard.addView(heroRow);
@@ -670,7 +670,7 @@ public final class MainActivity extends Activity {
                 }
             } else {
                 String progress = "Skill " + life.get(Stat.SKILL) + "/" + eye.skill
-                        + (eye.wins > 0 ? " · Cedar Pass wins " + life.victories + "/" + eye.wins : "");
+                        + (eye.wins > 0 ? " · Duel wins " + life.totalDuelWins() + "/" + eye.wins : "");
                 bloodline.addView(text("Dormant · Awakens at " + eye.requirement() + " (" + progress + ")", 13, PURPLE, MEDIUM));
             }
             if (life.canAwakenEye(eye)) {
@@ -956,7 +956,7 @@ public final class MainActivity extends Activity {
             }
         } else if (next != null) {
             fact(next.title + " exam", life.examRequirements() + ". You have " + life.academyCredits + " credits, "
-                    + life.get(Stat.SKILL) + " Skill, and " + life.victories + " duel wins.");
+                    + life.get(Stat.SKILL) + " Skill, and " + life.totalDuelWins() + " duel wins.");
             if (life.canTakeExam()) {
                 buttonIn(body, "Take the " + next.title + " exam", Color.WHITE, RED, () -> {
                     if (life.takeExam()) update();
@@ -1581,7 +1581,9 @@ public final class MainActivity extends Activity {
             top.addView(text(life.contactName(i), 20, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
             top.addView(pill(Life.trustTier(life.bonds[i]), GREEN, MINT));
             info.addView(top);
-            info.addView(text(Life.ROLES[i] + " · Age " + life.contactAge(i), 13, MUTED, MEDIUM));
+            info.addView(text(life.contactGender(i) + " · " + Life.ROLES[i] + " · Age " + life.contactAge(i),
+                    13, MUTED, MEDIUM));
+            info.addView(text(life.contactClanName(i) + " · " + Life.VILLAGES[life.homeVillage], 12, MUTED, BODY));
             gap(info, 4);
             info.addView(text(life.bonds[i] + " / 100 Trust"
                     + (life.canAllyFavor(i) ? " · Favor ready" : ""), 12, GREEN, MEDIUM));
@@ -1615,6 +1617,7 @@ public final class MainActivity extends Activity {
         heading("People in " + life.village(), residentDirectory ? "Meet your neighbors and get to know their stories." : "Get to know local residents, meet old friends, or ask someone out.");
         int shown = 0;
         for (Life.Interest interest : life.residents()) {
+            if (!residentDirectory && (life.isRelative(interest) || life.residentAge(interest) < Life.ADULT_AGE)) continue;
             if (interest.village >= 0 && interest.village != life.village && !life.isPartner(interest)
                     && life.affection(interest) == 0) continue;
             if (shown++ == residentLimit) {
@@ -1651,7 +1654,7 @@ public final class MainActivity extends Activity {
         LinearLayout identity = column();
         inset(identity, 12, 0, 0, 0);
         identity.addView(text(interest.name, 27, Color.WHITE, DISPLAY));
-        identity.addView(text(life.romanceStatus(interest, residentDirectory) + " · " + life.residentAge(interest) + " years old",
+        identity.addView(text(interest.gender + " · " + life.residentAge(interest) + " years old · " + life.romanceStatus(interest, residentDirectory),
                 14, LIGHT_TEXT, MEDIUM));
         intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(scene(intro));
@@ -1662,14 +1665,25 @@ public final class MainActivity extends Activity {
         bond.addView(progress(life.affection(interest), RED));
         body.addView(bond);
         gap(body, 9);
+        LinearLayout profile = card(WHITE, 13);
+        profile.addView(text("Profile & Lineage", 16, INK, DISPLAY));
+        gap(profile, 6);
+        profileRow(profile, "Gender", interest.gender);
+        profileRow(profile, "Age", life.residentAge(interest) + " years old");
+        profileRow(profile, "Clan", Clans.ALL[interest.clan].name());
+        profileRow(profile, "Bloodline", Life.bloodlineNames(interest.eyes()));
+        profileRow(profile, "Village", interest.village < 0 ? life.village() : Life.VILLAGES[interest.village]);
+        profileRow(profile, "Favorite date", interest.favorite.label + " (+5 Affection)");
+        body.addView(profile);
+        gap(body, 9);
         String background = life.residentAge(interest) < Life.ADULT_AGE ? "Grew up in " + life.village() + "." : interest.about;
         fact("About " + interest.name, background + " " + Clans.ALL[interest.clan].name() + " lineage.");
         if (life.isPartner(interest)) {
             buttonIn(body, "Family & children", PURPLE, LILAC, () -> go("family"));
             gap(body, 8);
         }
-        boolean friendshipOnly = residentDirectory || life.isRelative(interest) || life.age() < Life.ADULT_AGE
-                || life.residentAge(interest) < Life.ADULT_AGE || (life.partner >= 0 && !life.isPartner(interest));
+        boolean friendshipOnly = !life.isPartner(interest) && (residentDirectory || life.isRelative(interest)
+                || life.age() < Life.ADULT_AGE || life.residentAge(interest) < Life.ADULT_AGE || life.partner >= 0);
         if (friendshipOnly) {
             body.addView(pill("Getting acquainted", MUTED, PAPER));
             gap(body, 8);
@@ -1798,6 +1812,14 @@ public final class MainActivity extends Activity {
         gap(body, 8);
     }
 
+    private void profileRow(LinearLayout host, String label, String value) {
+        LinearLayout row = row();
+        row.addView(text(label, 13, MUTED, MEDIUM), new LinearLayout.LayoutParams(dp(92), WRAP));
+        row.addView(text(value, 14, INK, MEDIUM), new LinearLayout.LayoutParams(0, WRAP, 1));
+        inset(row, 0, 2, 0, 2);
+        host.addView(row);
+    }
+
     private Portrait contactPortrait(int contact) {
         Life.Kin parent = contact == 0 ? life.guardianParent() : null;
         if (parent != null && parent.residentId() >= 0) return romancePortrait(life.residents()[parent.residentId()]);
@@ -1820,10 +1842,27 @@ public final class MainActivity extends Activity {
         LinearLayout identity = column();
         inset(identity, 12, 0, 0, 0);
         identity.addView(text(life.contactName(contact), 28, Color.WHITE, DISPLAY));
-        identity.addView(text(Life.ROLES[contact] + " · Age " + life.contactAge(contact) + " · " + Life.trustTier(life.bonds[contact]),
+        identity.addView(text(life.contactGender(contact) + " · Age " + life.contactAge(contact),
+                13, LIGHT_TEXT, MEDIUM));
+        identity.addView(text(life.contactRelation(contact) + " · " + Life.trustTier(life.bonds[contact]),
                 13, LIGHT_TEXT, MEDIUM));
         intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(scene(intro));
+        gap(body, 9);
+
+        LinearLayout profile = card(WHITE, 13);
+        profile.addView(text("Profile", 16, INK, DISPLAY));
+        gap(profile, 6);
+        profileRow(profile, "Gender", life.contactGender(contact));
+        profileRow(profile, "Relation", life.contactRelation(contact));
+        profileRow(profile, "Age", life.contactAge(contact) + " years old (Born in " + life.contactBirthSeason(contact) + ")");
+        profileRow(profile, "Clan & Village", life.contactClanName(contact) + " · " + Life.VILLAGES[life.homeVillage]);
+        profileRow(profile, "Occupation", life.contactOccupation(contact));
+        gap(profile, 4);
+        profile.addView(text(life.contactPersonality(contact), 14, MUTED, BODY));
+        gap(profile, 3);
+        profile.addView(text(life.contactLikes(contact), 13, PURPLE, MEDIUM));
+        body.addView(profile);
         gap(body, 9);
 
         LinearLayout trust = card(WHITE, 13);
@@ -1857,11 +1896,12 @@ public final class MainActivity extends Activity {
         }
         gap(body, 10);
 
+        String allyName = life.contactName(contact);
         String[] favorTitles = {"Lantern Bento", "Market Tip-Off", "Rooftop Sparring"};
         String[] favorEffects = {
-            "Recover +16 Stamina and +12 Health from Nao's home cooking.",
-            "Collect +40 Coins and +12 Chakra from Jun's courier lead.",
-            "Gain +2 Skill and +5 Fame sparring with Mika."
+            "Recover +16 Stamina and +12 Health from " + allyName + "'s home cooking.",
+            "Collect +40 Coins and +12 Chakra from " + allyName + "'s courier lead.",
+            "Gain +2 Skill and +5 Fame sparring with " + allyName + "."
         };
         LinearLayout favorCard = card(GOLD_BG, 13);
         favorCard.addView(text("Sworn Ally Favor · " + favorTitles[contact], 17, GOLD_INK, DISPLAY));

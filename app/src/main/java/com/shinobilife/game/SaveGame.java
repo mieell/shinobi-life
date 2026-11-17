@@ -22,7 +22,8 @@ final class SaveGame {
             life.homeVillage = bounded(json.optInt("homeVillage", life.village), Life.VILLAGES.length - 1);
             life.career = Life.Career.values()[bounded(json.optInt("career"), Life.Career.values().length - 1)];
             life.careerShifts = Math.max(0, json.optInt("careerShifts"));
-            life.gender = bounded(json.optInt("gender"), Life.GENDERS.length - 1);
+            boolean binaryGender = json.optBoolean("binaryGender");
+            life.gender = readGender(json.optInt("gender"), binaryGender);
             life.family = bounded(json.optInt("family"), Life.FAMILIES.length - 1);
             life.guardian = bounded(json.optInt("guardian"), 7);
             life.villageActions = json.optInt("villageActions") & ((1 << Life.VillageAction.values().length) - 1);
@@ -92,7 +93,7 @@ final class SaveGame {
                 JSONObject child = children.optJSONObject(i);
                 if (child == null) continue;
                 life.children.add(new Life.Child(child.optString("name", "Ren"),
-                        bounded(child.optInt("gender"), Life.GENDERS.length - 1),
+                        readGender(child.optInt("gender"), binaryGender),
                         bounded(child.optInt("clan"), Clans.ALL.length - 1),
                         bounded(child.optInt("otherClan", -1) + 1, Clans.ALL.length) - 1,
                         child.optInt("eyes") & eyeMask, bounded(child.optInt("born"), life.season),
@@ -175,6 +176,7 @@ final class SaveGame {
             json.put("career", life.career.ordinal());
             json.put("careerShifts", life.careerShifts);
             json.put("gender", life.gender);
+            json.put("binaryGender", true);
             json.put("family", life.family);
             json.put("guardian", life.guardian);
             json.put("villageActions", life.villageActions);
@@ -293,6 +295,10 @@ final class SaveGame {
         } catch (JSONException error) {
             throw new IllegalStateException("Could not encode saved life", error);
         }
+    }
+
+    private static int readGender(int value, boolean binaryGender) {
+        return binaryGender ? bounded(value, Life.GENDERS.length - 1) : (value == 1 ? 1 : 0);
     }
 
     private static int indexOrMissing(int id, int count) {

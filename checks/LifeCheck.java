@@ -144,8 +144,8 @@ final class LifeCheck {
         java.util.Random random = new java.util.Random(91);
         for (int village = 0; village < Life.VILLAGES.length; village++) {
             for (int i = 0; i < 300; i++) {
-                Life life = Life.rollNewLife("Ren", village, 3, 1, style, random);
-                check(life.gender == 3 && life.homeVillage == village, "selected identity");
+                Life life = Life.rollNewLife("Ren", village, 1, 1, style, random);
+                check(life.gender == 1 && life.homeVillage == village, "selected identity");
                 check(life.awakenedEyes == 0 && !life.duel(Life.Move.EYE), "eyes are dormant at birth");
                 if (life.clan().eye() == EyePower.SPARKGLASS) check(village == 3, "Sparkglass origins");
                 if (life.clan().eye() == EyePower.HORIZON) check(village == 2 || village == 4, "Horizon origins");
@@ -469,7 +469,75 @@ final class LifeCheck {
         check(next.kin.stream().anyMatch(relative -> relative.name().equals("Rei") && relative.role().equals("Sibling")),
                 "heir retains sibling");
         check(next.contactName(0).equals(parent.residents()[heir.otherParent()].name), "other parent is guardian");
-        check(!next.canStart(Missions.COURIER), "child heirs cannot take missions");
+        check(!next.canStart(Missions.COURIER) && !next.train() && !next.meditate() && !next.styleUp(), "child heirs cannot take adult shinobi actions");
+        check(next.villageActivity(Life.VillageAction.TEAHOUSE) && !next.villageActivity(Life.VillageAction.PICNIC), "rival social actions wait until age 6");
+        check(Life.GENDERS.length == 2 && (next.contactGender(0).equals("Male") || next.contactGender(0).equals("Female")), "only Male and Female genders");
+
+        Life scarredParent = start(0, 1);
+        scarredParent.style[5] = 2;
+        scarredParent.style[6] = 5;
+        scarredParent.partner = 0;
+        scarredParent.affection[0] = 90;
+        check(scarredParent.welcomeChild("Sora", new Random(3)), "child for scar check");
+        scarredParent.deathAge = 19;
+        for (int i = 0; i < 4; i++) scarredParent.advance();
+        Life cleanHeir = scarredParent.succeed(scarredParent.children.get(0));
+        check(cleanHeir.style[5] == 0 && cleanHeir.style[6] == 0, "heirs do not inherit battle scars or masks as infants");
+        check(!cleanHeir.villageActivity(Life.VillageAction.TEAHOUSE) && !cleanHeir.villageActivity(Life.VillageAction.PICNIC), "infant social actions wait until contact age");
+
+        Life lowHp = start(0, 1);
+        lowHp.add(Stat.SKILL, 20);
+        lowHp.add(Stat.HEALTH, 5 - lowHp.get(Stat.HEALTH));
+        check(!lowHp.villageActivity(Life.VillageAction.SPAR), "spar blocks self-KO at <= 5 HP");
+
+        Life examChallenger = start(0, 1);
+        examChallenger.academyRank = Life.AcademyRank.CHUNIN;
+        examChallenger.academyCredits = 3;
+        examChallenger.add(Stat.SKILL, 25);
+        examChallenger.victories = 1;
+        examChallenger.challengerWins = 2;
+        check(examChallenger.totalDuelWins() == 3 && examChallenger.canTakeExam(), "circuit wins count toward promotion exam");
+
+        Life inheritedOnly = start(0, 1);
+        inheritedOnly.inheritedEyes = EyePower.FARWATCH.mask();
+        inheritedOnly.add(Stat.SKILL, 20);
+        inheritedOnly.challengerWins = 1;
+        check(inheritedOnly.primaryEye() == EyePower.FARWATCH && inheritedOnly.awakenEye(), "inherited non-clan eye awakens via totalDuelWins");
+
+        Life newborn = Life.rollNewLife("Ren", 3, 0, 1, new int[10], 0, new Random(7));
+        check(newborn.get(Stat.SKILL) == 0, "newborn starts with 0 skill before academy");
+        for (int i = 0; i < 24; i++) newborn.advance();
+        check(newborn.age() == 6 && !newborn.contactOccupation(1).isEmpty() && !newborn.contactLikes(2).isEmpty(), "newborn reaches age 6 with varied contact bio");
+
+        injured.add(Stat.SKILL, 25);
+        injured.academyCredits = 3;
+        injured.victories = 3;
+        injured.add(Stat.HEALTH, -100);
+        check(!injured.train() && !injured.canTakeExam() && !injured.villageActivity(Life.VillageAction.FIELD), "0 Health blocks training, exams, and field drills");
+
+        Life shieldTest = named("Kagaribi");
+        shieldTest.inheritedEyes = EyePower.SPARKGLASS.mask() | EyePower.FARWATCH.mask();
+        shieldTest.add(Stat.SKILL, 45);
+        shieldTest.victories = 1;
+        shieldTest.challengerWins = 2;
+        shieldTest.awakenEye(EyePower.SPARKGLASS);
+        shieldTest.awakenEye(EyePower.FARWATCH);
+        shieldTest.eyeTrials[EyePower.SPARKGLASS.ordinal()] = 3;
+        shieldTest.eyeTrials[EyePower.FARWATCH.ordinal()] = 3;
+        shieldTest.evolve(EyePower.SPARKGLASS);
+        shieldTest.evolve(EyePower.FARWATCH);
+        check(shieldTest.enterDuel(Life.Rival.IBARA) && shieldTest.castManifestation(EyePower.SPARKGLASS)
+                && shieldTest.castManifestation(EyePower.FARWATCH) && shieldTest.guardianTurns == 1,
+                "Glass Guardian does not waste a turn when counter is sealed to 0");
+
+        Life elderLine = freshParent();
+        Life.Child elderHeir = elderLine.children.get(0);
+        Life gen2 = elderLine.succeed(elderHeir);
+        Life gen2Same = elderLine.succeed(elderHeir);
+        check(gen2.deathAge == gen2Same.deathAge, "heir deathAge is deterministic");
+        gen2.deathAge = 200;
+        for (int i = 0; i < 82 * 4; i++) gen2.advance();
+        check(gen2.kin.stream().allMatch(k -> k.died() >= 0), "ancestors age out instead of staying immortal");
     }
 
     private static Life freshParent() {
