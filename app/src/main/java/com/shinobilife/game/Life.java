@@ -14,7 +14,7 @@ final class Life {
     static final String[] ROLES = {"Family", "Friend", "Rival"};
     static final String[] PRESENCE = {"Everyday", "Polished", "Striking"};
     static final int[] BASE_LOOKS = {52, 68, 84};
-    static final int LOOK_COST = 35;
+    static final int LOOK_COST = 35, GIFT_COST = 25, FAVOR_TRUST = 60;
 
     record Event(String date, String title, String detail) {}
 
@@ -26,7 +26,8 @@ final class Life {
 
     String name;
     int clan, village, presence, season, completed, interacted, victories;
-    boolean styled, worked, rested;
+    boolean styled, worked, rested, meditated;
+    int gifted, favored;
     int scoutedMissions, bondedSummons, duelSummons;
     int enemyHp, round;
     int burnTurns, observedMove;
@@ -40,7 +41,7 @@ final class Life {
         life.clan = clan;
         life.village = village;
         life.presence = presence;
-        System.arraycopy(style, 0, life.style, 0, style.length);
+        System.arraycopy(style, 0, life.style, 0, Math.min(style.length, life.style.length));
         life.stats.put(Stat.HEALTH, 82);
         life.stats.put(Stat.CHAKRA, 75);
         life.stats.put(Stat.STAMINA, 84);
@@ -59,7 +60,29 @@ final class Life {
     String village() { return VILLAGES[village]; }
     int age() { return startAge + season / SEASONS.length; }
     String date() { return SEASONS[season % SEASONS.length] + " · Age " + age(); }
-    String rank() { return victories >= 3 ? "Pass Champion" : get(Stat.SKILL) >= 22 ? "Field Shinobi" : "Academy Graduate"; }
+    String rank() {
+        if (victories >= 5 && get(Stat.FAME) >= 60) return "Grand Shinobi";
+        if (victories >= 4 && get(Stat.SKILL) >= 35) return "Village Jonin";
+        if (victories >= 3) return "Pass Champion";
+        if (get(Stat.SKILL) >= 22) return "Field Shinobi";
+        return "Academy Graduate";
+    }
+    int signedSummonCount() {
+        int count = 0;
+        for (Summon summon : Summon.ALL) if (hasSummon(summon)) count++;
+        return count;
+    }
+    int trustedAllyCount() {
+        int count = 0;
+        for (int bond : bonds) if (bond >= 75) count++;
+        return count;
+    }
+    static String trustTier(int bond) {
+        if (bond >= 90) return "Sworn Bond";
+        if (bond >= 60) return "Trusted Ally";
+        if (bond >= 40) return "Friend";
+        return "Acquaintance";
+    }
     int get(Stat stat) { return stats.getOrDefault(stat, 0); }
 
     void add(Stat stat, int change) {
@@ -78,8 +101,8 @@ final class Life {
 
     void advance() {
         season++;
-        completed = interacted = bondedSummons = 0;
-        styled = worked = rested = false;
+        completed = interacted = bondedSummons = gifted = favored = 0;
+        styled = worked = rested = meditated = false;
         add(Stat.STAMINA, 45);
         add(Stat.CHAKRA, 48);
         add(Stat.HEALTH, 14);
@@ -135,6 +158,16 @@ final class Life {
         return true;
     }
 
+    boolean meditate() {
+        if (meditated || enemyHp > 0) return false;
+        meditated = true;
+        add(Stat.CHAKRA, 22);
+        add(Stat.MOOD, 4);
+        add(Stat.SKILL, 1);
+        note("Shrine meditation", "You focused your breathing beneath the cedar trees. +22 Chakra, +4 Happiness, and +1 Skill.");
+        return true;
+    }
+
     boolean interact(int contact) {
         if ((interacted & (1 << contact)) != 0) return false;
         interacted |= 1 << contact;
@@ -142,6 +175,44 @@ final class Life {
         bonds[contact] = Math.min(100, bonds[contact] + gain);
         add(Stat.MOOD, 3);
         note("Time with " + CONTACTS[contact], "You traded stories after the market closed. +" + gain + " Trust.");
+        return true;
+    }
+
+    boolean gift(int contact) {
+        if (enemyHp > 0 || (gifted & (1 << contact)) != 0 || get(Stat.COINS) < GIFT_COST || bonds[contact] == 100) return false;
+        gifted |= 1 << contact;
+        add(Stat.COINS, -GIFT_COST);
+        int gain = Math.min(6, 100 - bonds[contact]);
+        bonds[contact] += gain;
+        add(Stat.MOOD, 4);
+        note("A gift for " + CONTACTS[contact], "You brought a lantern keepsake from the market. +" + gain + " Trust and +4 Happiness.");
+        return true;
+    }
+
+    boolean canAllyFavor(int contact) {
+        return enemyHp == 0 && bonds[contact] >= FAVOR_TRUST && (favored & (1 << contact)) == 0;
+    }
+
+    boolean allyFavor(int contact) {
+        if (!canAllyFavor(contact)) return false;
+        favored |= 1 << contact;
+        switch (contact) {
+            case 0 -> {
+                add(Stat.STAMINA, 16);
+                add(Stat.HEALTH, 12);
+                note("Home cooking with Nao", "Nao packed spiced rice balls and ginger tea for the road. +16 Stamina and +12 Health.");
+            }
+            case 1 -> {
+                add(Stat.COINS, 40);
+                add(Stat.CHAKRA, 12);
+                note("Jun's market tip", "Jun pointed out an unguarded courier shortcut and split the bonus. +40 Coins and +12 Chakra.");
+            }
+            case 2 -> {
+                add(Stat.SKILL, 2);
+                add(Stat.FAME, 5);
+                note("Rooftop spar with Mika", "You drew a crowd trading footwork on the academy roof. +2 Skill and +5 Fame.");
+            }
+        }
         return true;
     }
 

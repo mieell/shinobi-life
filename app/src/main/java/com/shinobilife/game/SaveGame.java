@@ -27,6 +27,9 @@ final class SaveGame {
             life.styled = json.getBoolean("styled");
             life.worked = json.getBoolean("worked");
             life.rested = json.getBoolean("rested");
+            life.meditated = json.optBoolean("meditated");
+            life.gifted = json.optInt("gifted") & 7;
+            life.favored = json.optInt("favored") & 7;
             life.enemyHp = bounded(json.optInt("enemyHp"), 72);
             life.round = Math.max(0, json.optInt("round"));
             life.duelLog = json.optString("duelLog");
@@ -85,6 +88,9 @@ final class SaveGame {
             json.put("styled", life.styled);
             json.put("worked", life.worked);
             json.put("rested", life.rested);
+            json.put("meditated", life.meditated);
+            json.put("gifted", life.gifted);
+            json.put("favored", life.favored);
             json.put("enemyHp", life.enemyHp);
             json.put("round", life.round);
             json.put("duelLog", life.duelLog);

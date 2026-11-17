@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.view.View;
 
@@ -14,72 +15,118 @@ final class Portrait extends View {
     static final String[][] OPTIONS = {
         {"Silver Sweep", "Soft Crop", "Topknot", "Side Part", "Long Waves", "Round Curls",
                 "Low Ponytail", "Cropped Fade", "Side Braid", "Wild Fringe"},
-        {"Ink", "Chestnut", "Silver", "Auburn", "Plum", "Honey"},
-        {"Amber", "Hazel", "Slate", "Jade", "Violet", "Dark Brown"},
+        {"Ink", "Chestnut", "Silver", "Auburn", "Plum", "Honey", "Crimson", "Frost Blue"},
+        {"Amber", "Hazel", "Slate", "Jade", "Violet", "Dark Brown", "Ruby", "Ice Blue"},
         {"Porcelain", "Peach", "Warm Tan", "Copper", "Umber", "Deep Brown"},
-        {"Trail Jacket", "Crimson Wrap", "Academy Vest", "Travel Cloak", "Ivory Kimono"},
-        {"None", "Cheek Mark", "Brow Cut"},
-        {"None", "Gold Stud", "Red Ribbon", "Round Glasses"}
+        {"Trail Jacket", "Crimson Wrap", "Academy Vest", "Travel Cloak", "Ivory Kimono", "Shadow Haori", "Ward Armor"},
+        {"None", "Cheek Mark", "Brow Cut", "Bridge Scar", "Sage Marks"},
+        {"None", "Gold Stud", "Red Ribbon", "Round Glasses", "Headband", "Fox Mask", "Face Mask"}
     };
-    static final String[] LABELS = {"Hair style", "Hair color", "Eye color", "Skin tone", "Outfit", "Scar", "Accessory"};
-    private static final int INK = 0xFF25202D;
-    private static final int[] HAIR = {0xFF323C53, 0xFF634742, 0xFFB6ADAE, 0xFF985044, 0xFF5D416C, 0xFFC68A4A};
-    private static final int[] EYES = {0xFF995427, 0xFF727050, 0xFF50688A, 0xFF3A7365, 0xFF74458B, 0xFF543532};
-    private static final int[] SKIN = {0xFFF4D5B9, 0xFFEAB997, 0xFFD99B71, 0xFFBC7955, 0xFF955D49, 0xFF6E493D};
-    private static final int[] CLOTH = {0xFF3F6D6A, 0xFF994048, 0xFF586A88, 0xFF584D6C, 0xFFE6D1B1};
+    static final String[] LABELS = {"Hair style", "Hair color", "Eye color", "Skin tone", "Outfit", "Scar & Marks", "Gear & Acc."};
 
-    private static final Path COAT = vector("M -6 127 C 2 111 17 103 43 96 L 73 92 C 90 95 111 104 125 121 L 125 130 Z");
-    private static final Path NECK = vector("M 47 78 L 78 78 L 77 90 Q 79 96 86 100 L 65 118 L 42 99 Q 49 93 47 78 Z");
-    private static final Path NECK_SHADE = vector("M 48 80 L 78 79 L 77 89 Q 67 97 46 94 Z");
-    private static final Path FACE = vector("M 36 45 C 35 27 53 22 64 22 C 82 21 92 35 91 48 L 89 56 Q 90 63 95 67 Q 96 70 89 72 L 87 81 Q 85 87 74 93 Q 66 97 57 92 Q 42 85 36 75 L 33 61 Z");
-    private static final Path FACE_SHADE = vector("M 28 38 Q 51 25 70 33 L 64 43 C 50 49 48 65 53 78 Q 61 88 74 91 L 74 99 L 29 92 Z");
-    private static final Path CHEEK_LIGHT = vector("M 73 63 Q 78 61 85 61 L 90 67 L 84 68 Q 76 67 73 63 Z");
-    private static final Path EAR = vector("M 38 59 Q 30 53 28 60 Q 27 70 39 77 L 42 71 Z");
+    private static final int INK = 0xFF1F1A28;
+    private static final int[] HAIR = {
+        0xFF283148, 0xFF63423C, 0xFFB8B2B6, 0xFF9C463B,
+        0xFF5A396B, 0xFFCA8E44, 0xFFA62C37, 0xFF5683A8
+    };
+    private static final int[] EYES = {
+        0xFFAD5D28, 0xFF70704A, 0xFF4C6A92, 0xFF347C6A,
+        0xFF784696, 0xFF4F312E, 0xFFB8303B, 0xFF58A2CE
+    };
+    private static final int[] SKIN = {
+        0xFFF6D9C0, 0xFFEDBC99, 0xFFDC9C70, 0xFFBD7853,
+        0xFF945B46, 0xFF6B463A
+    };
+    private static final int[] CLOTH = {
+        0xFF336A65, 0xFF983842, 0xFF4E6280, 0xFF4B3E66,
+        0xFFEAD9BF, 0xFF292A38, 0xFF833339
+    };
 
-    private static final Path LEFT_EYE = vector("M 46 57 Q 55 51 65 56 Q 60 61 53 61 Q 49 61 46 57 Z");
-    private static final Path RIGHT_EYE = vector("M 73 55 Q 81 50 88 53 Q 85 59 79 59 Q 76 58 73 55 Z");
-    private static final Path LEFT_LID = vector("M 44 56 Q 52 52 57 53 Q 62 53 66 56");
-    private static final Path RIGHT_LID = vector("M 72 54 Q 78 50 84 50 L 89 52");
-    private static final Path LEFT_BROW = vector("M 44 50 Q 53 44 62 48 L 65 50 Q 56 48 46 52 Z");
-    private static final Path RIGHT_BROW = vector("M 72 48 Q 79 43 86 45 L 89 47 Q 82 45 73 50 Z");
-    private static final Path MOUTH = vector("M 64 79 Q 70 76 74 77 Q 79 77 82 76");
-    private static final Path NOSE = vector("M 79 56 Q 79 63 83 67 L 80 69");
-    private static final Path EAR_LINE = vector("M 32 61 Q 37 61 37 67");
+    // Base symmetrical-heroic bust geometry in 120x120 coordinates (center x = 60)
+    private static final Path TORSO = vector("M 6 123 C 11 103 27 94 46 91 L 60 97 L 74 91 C 93 94 109 103 114 123 Z");
+    private static final Path UNDERSHIRT = vector("M 43 92 L 60 115 L 77 92 L 71 89 L 49 89 Z");
+    private static final Path NECK = vector("M 49 78 L 71 78 L 72 95 Q 60 103 48 95 Z");
+    private static final Path NECK_SHADE = vector("M 49 79 L 71 79 L 71 90 Q 60 96 49 90 Z");
 
+    private static final Path LEFT_EAR = vector("M 36 52 Q 29 51 29 59 Q 30 68 37 67 Z");
+    private static final Path RIGHT_EAR = vector("M 84 52 Q 91 51 91 59 Q 90 68 83 67 Z");
+    private static final Path FACE = vector("M 35 45 C 35 25 46 19 60 19 C 74 19 85 25 85 45 L 84 62 Q 83 74 72 82 Q 64 88 60 88 Q 56 88 48 82 Q 37 74 36 62 Z");
+    private static final Path FACE_SHADOW = vector("M 35 45 C 35 25 46 19 60 19 L 60 32 C 48 33 41 41 41 53 C 41 68 47 79 60 85 L 60 88 Q 55 88 48 82 Q 37 74 36 62 Z");
+    private static final Path FOREHEAD_SHADE = vector("M 35 32 Q 60 44 85 32 L 85 44 Q 60 51 35 44 Z");
+
+    private static final Path LEFT_EYE = vector("M 41 55 Q 47 49 54 53 Q 53 59 47 59 Q 42 59 41 55 Z");
+    private static final Path RIGHT_EYE = vector("M 66 53 Q 73 49 79 55 Q 78 59 73 59 Q 67 59 66 53 Z");
+    private static final Path LEFT_LASH = vector("M 40 54 Q 47 48 55 53");
+    private static final Path RIGHT_LASH = vector("M 65 53 Q 73 48 80 54");
+    private static final Path LEFT_BROW = vector("M 40 48 Q 47 44 55 47 L 54 49 Q 47 47 41 50 Z");
+    private static final Path RIGHT_BROW = vector("M 65 47 Q 73 44 80 48 L 79 50 Q 73 47 66 49 Z");
+    private static final Path NOSE = vector("M 59 57 L 61 63 L 58 64.5");
+    private static final Path MOUTH = vector("M 53 74 Q 60 77.5 67 73.5");
+
+    // Outfit detail paths
+    private static final Path JACKET_COLLAR = vector("M 42 93 L 47 84 L 60 99 L 73 84 L 78 93 L 71 107 L 60 116 L 49 107 Z");
+    private static final Path JACKET_VEST_L = vector("M 21 102 L 42 93 L 45 123 L 16 123 Z");
+    private static final Path JACKET_VEST_R = vector("M 99 102 L 78 93 L 75 123 L 104 123 Z");
+
+    private static final Path WRAP_LAPEL_L = vector("M 42 92 L 64 119 L 55 123 L 36 96 Z");
+    private static final Path WRAP_LAPEL_R = vector("M 78 92 L 56 119 L 65 123 L 84 96 Z");
+
+    private static final Path VEST_COLLAR = vector("M 38 94 Q 60 83 82 94 L 76 104 Q 60 98 44 104 Z");
+    private static final Path VEST_BODY = vector("M 27 98 L 44 93 L 60 101 L 76 93 L 93 98 L 89 123 L 31 123 Z");
+
+    private static final Path CLOAK_MANTLE = vector("M 10 118 Q 25 94 46 90 L 60 102 L 74 90 Q 95 94 110 118 L 104 123 L 16 123 Z");
+    private static final Path CLOAK_COWL = vector("M 40 91 Q 60 85 80 91 L 73 105 Q 60 111 47 105 Z");
+
+    private static final Path HAORI_L = vector("M 10 123 C 14 104 28 95 45 92 L 52 123 Z");
+    private static final Path HAORI_R = vector("M 110 123 C 106 104 92 95 75 92 L 68 123 Z");
+
+    private static final Path ARMOR_L = vector("M 14 115 Q 25 95 45 93 L 48 113 Q 32 117 16 122 Z");
+    private static final Path ARMOR_R = vector("M 106 115 Q 95 95 75 93 L 72 113 Q 88 117 104 122 Z");
+    private static final Path ARMOR_PLATE = vector("M 35 108 Q 60 100 85 108 L 82 123 L 38 123 Z");
+
+    // 10 distinct anime hairstyles
     private static final Path[] HAIRSTYLES = {
-        vector("M 35 67 C 30 62 25 57 26 48 L 22 51 Q 19 41 30 31 L 23 32 Q 30 20 46 17 L 42 13 Q 54 12 64 15 C 78 12 91 19 97 26 L 91 26 Q 101 30 103 43 L 97 38 Q 97 45 89 52 Q 90 40 82 34 Q 72 41 63 44 L 66 37 Q 52 48 37 51 L 39 45 Q 33 52 35 67 Z"),
-        vector("M 35 65 Q 24 58 26 44 Q 26 30 39 21 Q 54 11 69 16 Q 89 18 96 34 Q 99 42 91 55 L 88 43 L 81 37 Q 76 43 68 41 L 64 36 Q 58 42 50 42 L 48 38 Q 45 46 36 48 Z"),
-        vector("M 35 68 Q 25 61 26 44 Q 28 25 47 19 Q 64 11 82 20 Q 94 26 96 40 Q 94 49 90 53 L 86 42 Q 83 36 78 31 Q 64 38 55 38 Q 44 40 37 49 Z"),
-        vector("M 34 65 Q 24 60 25 46 Q 25 32 32 25 Q 43 11 62 16 Q 79 13 91 26 Q 97 34 92 50 Q 88 36 72 30 Q 67 37 57 43 L 60 35 Q 52 45 37 50 Z"),
-        vector("M 30 79 C 24 70 23 60 24 45 Q 25 28 35 21 Q 47 12 64 16 Q 82 12 94 28 Q 102 42 96 65 L 90 72 Q 91 48 81 36 Q 76 33 72 28 Q 62 43 46 46 Q 35 48 35 66 L 37 85 Z"),
-        vector("M 36 64 Q 26 63 26 54 Q 19 47 25 39 Q 22 30 31 26 Q 30 19 43 17 Q 48 10 59 15 Q 69 10 77 17 Q 88 14 92 23 Q 101 28 98 36 Q 104 43 95 51 L 89 53 Q 88 43 81 41 Q 73 46 66 39 Q 59 44 53 38 Q 46 45 40 43 Q 35 49 36 64 Z"),
-        vector("M 35 66 Q 24 61 26 46 Q 27 29 38 23 Q 55 13 71 17 Q 92 20 95 37 Q 96 46 89 52 Q 87 40 81 34 Q 65 44 51 43 L 54 39 Q 44 45 36 50 Z"),
-        vector("M 31 58 Q 26 52 27 43 Q 26 30 38 23 Q 48 16 63 16 Q 80 16 91 27 Q 97 35 92 49 L 87 41 Q 66 34 42 39 Q 37 44 34 54 Z"),
-        vector("M 36 65 Q 26 59 26 45 Q 26 29 41 21 Q 53 14 66 17 Q 86 16 95 33 Q 99 44 91 51 L 86 43 Q 81 34 73 29 Q 65 41 52 43 L 54 36 Q 47 43 38 46 Z"),
-        vector("M 35 66 Q 24 62 25 50 L 21 54 Q 18 45 28 37 L 24 37 Q 29 29 42 22 L 34 20 Q 48 16 57 17 L 56 12 Q 66 13 75 21 L 81 16 Q 91 21 96 32 L 102 31 Q 104 45 92 54 Q 92 47 88 41 L 81 47 L 81 39 Q 74 47 67 50 L 70 41 Q 61 47 52 50 L 54 43 Q 44 49 37 52 Z")
+        // 0: Silver Sweep (spiky swept locks + dynamic parted bangs)
+        vector("M 34 61 C 28 53 26 42 29 34 L 22 36 Q 23 24 35 19 L 31 14 Q 44 11 55 15 Q 68 10 81 16 L 86 12 Q 92 21 90 30 L 97 32 Q 94 44 86 58 Q 86 43 79 34 L 74 43 L 70 33 Q 61 45 53 45 L 55 34 Q 45 45 37 47 L 39 39 Q 34 49 34 61 Z"),
+        // 1: Soft Crop (neat textured bangs)
+        vector("M 35 58 Q 27 50 28 37 Q 29 21 43 16 Q 60 11 77 16 Q 91 21 92 37 Q 93 50 85 58 L 83 41 L 76 35 Q 70 43 64 41 L 60 35 Q 54 43 46 42 L 42 36 Q 36 44 35 58 Z"),
+        // 2: Topknot (clean swept hairline with temple wisps)
+        vector("M 35 58 Q 28 49 29 36 Q 32 20 46 16 Q 60 13 74 16 Q 88 20 91 36 Q 92 49 85 58 L 82 38 Q 74 28 60 28 Q 46 28 38 38 Z"),
+        // 3: Side Part (smooth asymmetric sweep)
+        vector("M 34 60 Q 27 50 28 36 Q 30 20 45 15 Q 62 11 79 17 Q 92 24 91 39 Q 91 51 85 59 L 82 37 Q 68 27 54 31 Q 49 39 38 45 L 41 37 Q 34 45 34 60 Z"),
+        // 4: Long Waves (parted bangs + long cheek-framing side locks)
+        vector("M 31 92 Q 25 65 27 38 Q 29 19 46 14 Q 60 11 74 14 Q 91 19 93 38 Q 95 65 89 92 L 82 88 Q 86 58 80 35 Q 70 30 60 26 Q 50 30 40 35 Q 34 58 38 88 Z"),
+        // 5: Round Curls (fluffy scalloped curly crown)
+        vector("M 34 57 Q 25 53 26 44 Q 20 37 26 29 Q 25 20 35 17 Q 41 10 51 14 Q 60 8 69 14 Q 79 10 85 17 Q 95 20 94 29 Q 100 37 94 44 Q 95 53 86 57 Q 84 42 76 38 Q 68 43 60 36 Q 52 43 44 38 Q 36 42 34 57 Z"),
+        // 6: Low Ponytail (soft parted crown + gentle brow sweep)
+        vector("M 34 58 Q 27 49 29 35 Q 32 18 48 14 Q 64 12 78 17 Q 91 23 91 38 Q 91 49 85 58 L 81 39 Q 72 30 62 29 Q 53 39 42 42 L 45 35 Q 35 43 34 58 Z"),
+        // 7: Cropped Fade (short crisp buzzed hairline)
+        vector("M 34 52 Q 29 44 30 34 Q 31 19 45 15 Q 60 12 75 15 Q 89 19 90 34 Q 91 44 86 52 L 83 36 Q 71 29 60 30 Q 49 29 37 36 Z"),
+        // 8: Side Braid (sleek top + soft bangs)
+        vector("M 34 60 Q 27 50 29 35 Q 32 18 47 15 Q 62 12 76 16 Q 90 21 91 37 Q 92 50 85 59 L 82 39 Q 73 29 61 28 Q 52 38 40 43 L 43 35 Q 35 44 34 60 Z"),
+        // 9: Wild Fringe (dramatic spiky anime silhouette)
+        vector("M 34 60 L 24 52 L 29 43 L 18 39 L 28 29 L 21 23 L 36 20 L 35 10 L 49 16 L 59 8 L 68 17 L 82 10 L 82 21 L 97 22 L 90 31 L 101 38 L 91 45 L 95 54 L 85 59 L 82 40 L 73 48 L 72 35 L 62 49 L 60 34 L 49 49 L 47 36 L 38 46 Z")
     };
-    private static final Path HAIR_SHADE = vector("M 12 45 Q 44 35 64 35 Q 84 34 108 23 L 112 73 L 9 80 Z");
-    private static final Path HAIR_LIGHT = vector("M 25 39 Q 48 15 79 24 Q 70 25 64 29 Q 41 27 25 39 Z");
-    private static final Path HAIR_FLASH = vector("M 52 17 Q 62 15 67 17 C 61 25 52 37 37 47 Q 46 36 49 30 Q 46 31 43 31 Z");
-    private static final Path LONG_HAIR = vector("M 31 31 Q 16 45 23 73 Q 25 83 19 92 Q 35 96 43 85 L 80 82 Q 88 99 105 94 Q 98 81 101 68 Q 105 42 91 32 Z");
-    private static final Path PONYTAIL = vector("M 83 51 Q 98 46 104 57 Q 105 64 101 73 Q 96 85 104 93 Q 90 92 85 79 Q 81 66 87 59 Z");
-    private static final Path BRAID = vector("M 32 63 Q 22 64 23 73 L 24 79 L 21 86 L 24 93 L 21 98 Q 24 105 32 106 L 37 99 L 35 93 L 37 86 L 34 79 L 36 71 Z");
 
-    private static final Path[] COLLARS = {
-        vector("M 11 109 Q 24 99 44 96 L 58 106 L 76 95 Q 89 96 104 105 L 73 121 L 61 123 Z"),
-        vector("M 12 109 L 45 93 Q 63 104 77 93 L 96 101 Q 77 111 57 115 L 39 131 L 19 127 L 44 111 Z"),
-        vector("M 18 107 L 43 95 L 56 104 L 63 108 L 74 95 L 99 104 L 93 124 L 32 130 Z"),
-        vector("M 10 111 Q 21 95 43 93 Q 61 108 77 92 Q 95 93 110 109 L 100 125 L 50 128 L 22 120 Z"),
-        vector("M 13 109 L 43 94 L 58 110 L 77 95 L 101 103 L 72 118 L 62 130 L 47 130 L 55 117 Z")
-    };
-    private static final Path COLLAR_STITCH = vector("M 13 113 Q 29 105 40 103 M 79 100 Q 91 101 102 108");
+    private static final Path HAIR_CROWN_SHADE = vector("M 15 38 Q 60 46 105 32 L 108 105 L 12 105 Z");
+    private static final Path HAIR_HALO = vector("M 33 28 Q 60 15 87 28 Q 74 24 60 24 Q 46 24 33 28 Z");
+    private static final Path HAIR_FLASH = vector("M 53 15 Q 60 13 65 17 C 60 27 52 38 42 46 Q 48 34 51 26 L 46 28 Z");
+    private static final Path LONG_BACK = vector("M 26 30 Q 17 65 15 112 Q 30 120 42 108 L 78 108 Q 90 120 105 112 Q 103 65 94 30 Z");
+    private static final Path PONYTAIL_BACK = vector("M 80 54 Q 99 54 103 74 Q 105 92 98 112 Q 86 106 83 92 Q 79 75 82 62 Z");
+    private static final Path BRAID_DROP = vector("M 31 58 Q 23 64 25 74 L 22 83 L 26 91 L 23 100 L 28 112 L 35 101 L 33 91 L 37 82 L 35 72 L 37 61 Z");
+    private static final Path WILD_BACK = vector("M 26 42 L 15 62 L 28 69 L 19 82 L 36 86 L 84 86 L 101 82 L 92 69 L 105 62 L 94 42 Z");
+    private static final Path FOX_MASK = vector("M 71 19 L 76 11 L 81 18 L 89 18 L 94 11 L 98 20 Q 98 32 85 37 Q 71 32 71 19 Z");
+    private static final Path FACE_MASK = vector("M 36 59 Q 60 55 84 59 L 83 72 Q 76 86 60 90 Q 44 86 37 72 Z");
+    private static final Shader SPARKGLASS_AURA = new RadialGradient(60, 62, 54, 0x66D93B2C, 0x00D93B2C, Shader.TileMode.CLAMP);
+    private static final Shader HORIZON_AURA = new RadialGradient(60, 60, 56, 0x667B4BC2, 0x007B4BC2, Shader.TileMode.CLAMP);
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path frame = new Path();
     private final int[] style;
     private final int age;
+    private final int backdropColor;
     private final Shader backdrop;
-    private final EyePower eyePower;
+    private EyePower eyePower;
     private final int previewSlot, previewValue;
 
     Portrait(Context context, int[] style, int age, int backdrop, String label) {
@@ -99,153 +146,460 @@ final class Portrait extends View {
         super(context);
         this.style = style;
         this.age = age;
+        this.backdropColor = backdropColor;
         this.eyePower = eyePower;
         this.previewSlot = previewSlot;
         this.previewValue = previewValue;
-        backdrop = new LinearGradient(105, 0, 26, 124, tone(backdropColor, 0xFFFFEDC9, .15f),
-                tone(backdropColor, 0xFF444B64, .54f), Shader.TileMode.CLAMP);
-        frame.addRoundRect(1, 1, 119, 119, 15, 15, Path.Direction.CW);
+        this.backdrop = new LinearGradient(104, 0, 18, 120,
+                tone(backdropColor, 0xFFFFF0D4, .22f),
+                tone(backdropColor, 0xFF333952, .56f),
+                Shader.TileMode.CLAMP);
+        frame.addRoundRect(1, 1, 119, 119, 16, 16, Path.Direction.CW);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
         setContentDescription(eyePower == null ? label : label + ", " + eyePower.title + " awakened");
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
 
+    void setEyePower(EyePower eyePower) {
+        this.eyePower = eyePower;
+        invalidate();
+    }
+
     static boolean isColor(int slot) { return slot >= 1 && slot <= 3; }
 
     static int optionColor(int slot, int variant) {
         return switch (slot) {
-            case 1 -> HAIR[variant];
-            case 2 -> EYES[variant];
-            case 3 -> SKIN[variant];
+            case 1 -> HAIR[clamp(variant, HAIR.length)];
+            case 2 -> EYES[clamp(variant, EYES.length)];
+            case 3 -> SKIN[clamp(variant, SKIN.length)];
             default -> throw new IllegalArgumentException("No color palette for slot " + slot);
         };
     }
 
-    private int part(int slot) { return slot == previewSlot ? previewValue : style[slot]; }
+    private static int clamp(int index, int len) { return Math.max(0, Math.min(len - 1, index)); }
+
+    private int part(int slot) {
+        int raw = slot == previewSlot ? previewValue : style[slot];
+        return clamp(raw, OPTIONS[slot].length);
+    }
 
     @Override protected void onDraw(Canvas c) {
         float scale = Math.min(getWidth(), getHeight()) / 120f;
         c.save();
-        c.translate((getWidth() - 120 * scale) / 2, (getHeight() - 120 * scale) / 2);
+        c.translate((getWidth() - 120 * scale) / 2f, (getHeight() - 120 * scale) / 2f);
         c.scale(scale, scale);
         c.clipPath(frame);
-        paint.setShader(backdrop);
-        c.drawRect(0, 0, 120, 120, paint);
-        paint.setShader(null);
-        paint.setColor(0x55FFF0CE);
-        c.drawCircle(89, 39, 28, paint);
-        segment(c, 104, 16, 114, 16, 0x92FFE7C4, 1.1f);
-        segment(c, 109, 11, 109, 21, 0x92FFE7C4, 1.1f);
-        segment(c, 7, 90, 33, 73, 0x26FBE3C9, 1f);
+
+        drawBackdrop(c);
 
         int hair = HAIR[age >= 65 ? 2 : part(1)];
         int skin = SKIN[part(3)];
         int outfit = part(4);
         int hairStyle = part(0);
-        int lining = tone(CLOTH[outfit], INK, .56f);
-        if (hairStyle == 4) layer(c, LONG_HAIR, tone(hair, INK, .22f), 1.8f);
-        if (hairStyle == 6) layer(c, PONYTAIL, tone(hair, INK, .22f), 1.8f);
-        if (hairStyle == 2) {
-            paint.setColor(INK);
-            c.drawOval(50, 5, 73, 28, paint);
-            paint.setColor(hair);
-            c.drawOval(52, 6, 71, 25, paint);
-        }
-        layer(c, COAT, CLOTH[outfit], 2f);
-        layer(c, NECK, skin, 1.55f);
-        layer(c, NECK_SHADE, tone(skin, 0xFF884D57, .40f), 0);
-        layer(c, COLLARS[outfit], outfit == 4 ? 0xFF824452 : lining, 1.35f);
-        stroke(c, COLLAR_STITCH, tone(CLOTH[outfit], 0xFFF3D9B1, .38f), 1.25f);
 
-        layer(c, EAR, tone(skin, 0xFFA05B5E, .22f), 1.5f);
-        stroke(c, EAR_LINE, tone(skin, INK, .43f), 1.13f);
+        drawBackHair(c, hair, hairStyle);
+        drawBodyAndOutfit(c, skin, outfit);
+        drawHeadAndFace(c, hair, skin);
+        drawScarsAndMarks(c, skin);
+        drawFrontHair(c, hair, hairStyle);
+        drawAccessories(c, skin);
+
+        // Subtle inner frame edge highlight
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(1.5f);
+        paint.setColor(0x38FFFFFF);
+        c.drawRoundRect(2, 2, 118, 118, 15, 15, paint);
+        paint.setStyle(Paint.Style.FILL);
+        c.restore();
+    }
+
+    private void drawBackdrop(Canvas c) {
+        paint.setShader(backdrop);
+        c.drawRect(0, 0, 120, 120, paint);
+        paint.setShader(null);
+
+        // Moon glow
+        paint.setColor(0x4CFFF3D8);
+        c.drawCircle(88, 32, 26, paint);
+        paint.setColor(0x28FFF7E6);
+        c.drawCircle(88, 32, 35, paint);
+
+        // Diagonal light beam
+        paint.setColor(0x1EFFF2DB);
+        c.drawLine(8, 108, 42, 74, paint);
+        segment(c, 104, 15, 112, 15, 0x99FFE9C8, 1.1f);
+        segment(c, 108, 11, 108, 19, 0x99FFE9C8, 1.1f);
+        segment(c, 15, 22, 21, 22, 0x66FFE9C8, 0.9f);
+        segment(c, 18, 19, 18, 25, 0x66FFE9C8, 0.9f);
+
+        // Bloodline aura behind character
+        if (eyePower == EyePower.SPARKGLASS) {
+            paint.setShader(SPARKGLASS_AURA);
+            c.drawCircle(60, 62, 54, paint);
+            paint.setShader(null);
+            paint.setColor(0x88FFCC70);
+            c.drawCircle(24, 72, 1.4f, paint);
+            c.drawCircle(95, 58, 1.6f, paint);
+            c.drawCircle(30, 38, 1.2f, paint);
+        } else if (eyePower == EyePower.HORIZON) {
+            paint.setShader(HORIZON_AURA);
+            c.drawCircle(60, 60, 56, paint);
+            paint.setShader(null);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.2f);
+            paint.setColor(0x66DFB8FF);
+            c.drawCircle(60, 56, 36, paint);
+            paint.setColor(0x44C49BFF);
+            c.drawCircle(60, 56, 46, paint);
+            paint.setStyle(Paint.Style.FILL);
+        } else {
+            paint.setColor(0x16FFFFFF);
+            c.drawCircle(60, 62, 42, paint);
+        }
+    }
+
+    private void drawBackHair(Canvas c, int hair, int hairStyle) {
+        int backTone = tone(hair, INK, .30f);
+        if (hairStyle == 4) layer(c, LONG_BACK, backTone, 1.6f);
+        if (hairStyle == 6) {
+            layer(c, PONYTAIL_BACK, backTone, 1.6f);
+            paint.setColor(0xFFB43B46);
+            c.drawCircle(83, 60, 3.2f, paint);
+            strokeCircle(c, 83, 60, 3.2f, 1.2f);
+        }
+        if (hairStyle == 9) layer(c, WILD_BACK, backTone, 1.5f);
+        if (hairStyle == 2) {
+            paint.setColor(hair);
+            c.drawOval(49, 4, 71, 23, paint);
+            strokeOval(c, 49, 4, 71, 23, 1.6f);
+            paint.setColor(0xFFB43B46);
+            c.drawRoundRect(52, 17, 68, 21.5f, 1.5f, 1.5f, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(1.1f);
+            paint.setColor(INK);
+            c.drawRoundRect(52, 17, 68, 21.5f, 1.5f, 1.5f, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private void drawBodyAndOutfit(Canvas c, int skin, int outfit) {
+        int baseCloth = CLOTH[outfit];
+        int darkCloth = tone(baseCloth, INK, .48f);
+        int lightCloth = tone(baseCloth, 0xFFFFF4E3, .26f);
+
+        // Torso & neck
+        layer(c, TORSO, baseCloth, 1.7f);
+        layer(c, UNDERSHIRT, 0xFF282B3A, 1.2f);
+        // Mesh collar detail
+        segment(c, 52, 95, 58, 108, 0x44FFFFFF, 0.7f);
+        segment(c, 68, 95, 62, 108, 0x44FFFFFF, 0.7f);
+
+        layer(c, NECK, skin, 1.45f);
+        layer(c, NECK_SHADE, tone(skin, 0xFF8C4C54, .38f), 0);
+
+        switch (outfit) {
+            case 0 -> { // Trail Jacket
+                layer(c, JACKET_VEST_L, 0xFFD9C5A3, 1.3f);
+                layer(c, JACKET_VEST_R, 0xFFD9C5A3, 1.3f);
+                layer(c, JACKET_COLLAR, darkCloth, 1.4f);
+                segment(c, 60, 114, 60, 122, INK, 1.3f);
+                segment(c, 26, 106, 40, 100, lightCloth, 1.1f);
+                segment(c, 94, 106, 80, 100, lightCloth, 1.1f);
+            }
+            case 1 -> { // Crimson Wrap
+                layer(c, WRAP_LAPEL_L, 0xFF332938, 1.3f);
+                layer(c, WRAP_LAPEL_R, 0xFF332938, 1.3f);
+                segment(c, 41, 96, 61, 121, 0xFFDAB05E, 1.15f);
+                segment(c, 79, 96, 59, 121, 0xFFDAB05E, 1.15f);
+                segment(c, 20, 110, 40, 103, darkCloth, 1.2f);
+                segment(c, 100, 110, 80, 103, darkCloth, 1.2f);
+            }
+            case 2 -> { // Academy Vest
+                layer(c, VEST_BODY, baseCloth, 1.5f);
+                layer(c, VEST_COLLAR, lightCloth, 1.4f);
+                segment(c, 60, 101, 60, 122, INK, 1.3f);
+                // Dual chest pockets
+                paint.setColor(darkCloth);
+                c.drawRoundRect(30, 107, 45, 118, 2, 2, paint);
+                c.drawRoundRect(75, 107, 90, 118, 2, 2, paint);
+                paint.setColor(lightCloth);
+                c.drawRoundRect(30, 107, 45, 111, 1.5f, 1.5f, paint);
+                c.drawRoundRect(75, 107, 90, 111, 1.5f, 1.5f, paint);
+            }
+            case 3 -> { // Travel Cloak
+                layer(c, CLOAK_MANTLE, darkCloth, 1.5f);
+                layer(c, CLOAK_COWL, baseCloth, 1.4f);
+                paint.setColor(0xFFD6A858);
+                c.drawCircle(60, 106, 3.2f, paint);
+                strokeCircle(c, 60, 106, 3.2f, 1.1f);
+            }
+            case 4 -> { // Ivory Kimono
+                layer(c, TORSO, 0xFF883948, 1.5f);
+                layer(c, HAORI_L, baseCloth, 1.45f);
+                layer(c, HAORI_R, baseCloth, 1.45f);
+                segment(c, 45, 93, 52, 122, 0xFFD4A75A, 1.4f);
+                segment(c, 75, 93, 68, 122, 0xFFD4A75A, 1.4f);
+                segment(c, 49, 109, 71, 109, 0xFF9E3240, 2.2f);
+                paint.setColor(0xFFE6C275);
+                c.drawCircle(60, 109, 2.2f, paint);
+            }
+            case 5 -> { // Shadow Haori
+                layer(c, JACKET_COLLAR, 0xFF9C2F3E, 1.4f);
+                segment(c, 22, 106, 44, 96, 0xFF43465E, 1.3f);
+                segment(c, 98, 106, 76, 96, 0xFF43465E, 1.3f);
+                paint.setColor(0xFFC4C8D6);
+                c.drawCircle(35, 103, 1.8f, paint);
+                c.drawCircle(85, 103, 1.8f, paint);
+            }
+            case 6 -> { // Ward Armor
+                layer(c, ARMOR_PLATE, 0xFF3A3F52, 1.5f);
+                layer(c, ARMOR_L, baseCloth, 1.5f);
+                layer(c, ARMOR_R, baseCloth, 1.5f);
+                segment(c, 21, 105, 42, 102, 0xFFD4A75A, 1.2f);
+                segment(c, 99, 105, 78, 102, 0xFFD4A75A, 1.2f);
+                paint.setColor(0xFFE0B86A);
+                c.drawCircle(38, 108, 1.6f, paint);
+                c.drawCircle(82, 108, 1.6f, paint);
+            }
+        }
+    }
+
+    private void drawHeadAndFace(Canvas c, int hair, int skin) {
+        int earFill = tone(skin, 0xFF9E5A5E, .20f);
+        layer(c, LEFT_EAR, earFill, 1.4f);
+        layer(c, RIGHT_EAR, earFill, 1.4f);
+        segment(c, 32.5f, 57, 34.5f, 62, tone(skin, INK, .40f), 0.95f);
+        segment(c, 87.5f, 57, 85.5f, 62, tone(skin, INK, .40f), 0.95f);
+
         layer(c, FACE, skin, 0);
         c.save();
         c.clipPath(FACE);
-        layer(c, FACE_SHADE, tone(skin, 0xFF9C595E, .37f), 0);
-        layer(c, CHEEK_LIGHT, tone(skin, 0xFFF8D3B0, .29f), 0);
+        layer(c, FACE_SHADOW, tone(skin, 0xFF96505A, .26f), 0);
+        layer(c, FOREHEAD_SHADE, tone(skin, 0xFF8C4C54, .22f), 0);
+        // Warm soft cheek tint
+        paint.setColor(tone(skin, 0xFFE57A73, .22f));
+        c.drawOval(38, 61, 47, 66, paint);
+        c.drawOval(73, 61, 82, 66, paint);
+        // Highlight bridge on cheek
+        paint.setColor(tone(skin, 0xFFFFEFE0, .35f));
+        c.drawOval(67, 62, 74, 65.5f, paint);
         c.restore();
         stroke(c, FACE, INK, 1.5f);
-        face(c, hair, skin);
-        hair(c, hair, hairStyle);
-        accessories(c, skin);
-        c.restore();
-    }
 
-    private void face(Canvas c, int hair, int skin) {
-        int brow = tone(hair, INK, .58f);
-        layer(c, LEFT_BROW, brow, 0);
-        layer(c, RIGHT_BROW, brow, 0);
-        int eye = EYES[part(2)];
-        iris(c, LEFT_EYE, 56.1f, 56.8f, eye);
-        iris(c, RIGHT_EYE, 81.5f, 54.5f, eye);
-        stroke(c, LEFT_LID, INK, 1.35f);
-        stroke(c, RIGHT_LID, INK, 1.25f);
-        stroke(c, NOSE, tone(skin, INK, .42f), 1.07f);
-        stroke(c, MOUTH, tone(skin, INK, .68f), 1.15f);
-        segment(c, 70, 81, 76, 81, tone(skin, INK, .33f), .85f);
+        // Eyes & brows
+        int browColor = tone(hair, INK, .55f);
+        layer(c, LEFT_BROW, browColor, 0);
+        layer(c, RIGHT_BROW, browColor, 0);
+
+        int eyeColor = EYES[part(2)];
+        drawEye(c, LEFT_EYE, 47.6f, 54.6f, eyeColor);
+        drawEye(c, RIGHT_EYE, 72.4f, 54.6f, eyeColor);
+        stroke(c, LEFT_LASH, INK, 1.55f);
+        stroke(c, RIGHT_LASH, INK, 1.55f);
+
+        // Nose & mouth
+        stroke(c, NOSE, tone(skin, INK, .42f), 1.05f);
+        stroke(c, MOUTH, tone(skin, INK, .66f), 1.15f);
+        segment(c, 57, 79, 63, 79, tone(skin, INK, .28f), 0.85f);
+
         if (age >= 55) {
-            segment(c, 49, 65, 54, 66, tone(skin, INK, .42f), .8f);
-            segment(c, 78, 62, 84, 61, tone(skin, INK, .42f), .8f);
-            segment(c, 60, 77, 57, 81, tone(skin, INK, .37f), .8f);
+            int line = tone(skin, INK, .38f);
+            segment(c, 42, 61, 48, 62, line, 0.8f);
+            segment(c, 72, 62, 78, 61, line, 0.8f);
+            segment(c, 49, 73, 47, 78, line, 0.8f);
+            segment(c, 71, 73, 73, 78, line, 0.8f);
         }
     }
 
-    private void iris(Canvas c, Path eyeShape, float x, float y, int normal) {
-        layer(c, eyeShape, 0xFFEDE0D6, .66f);
+    private void drawEye(Canvas c, Path eyeShape, float x, float y, int normalColor) {
+        layer(c, eyeShape, 0xFFF3ECE6, 0.7f);
         c.save();
         c.clipPath(eyeShape);
-        int iris = eyePower == EyePower.SPARKGLASS ? 0xFFC53F35
-                : eyePower == EyePower.HORIZON ? 0xFF7449AB : normal;
+        // Subtle upper sclera shadow
+        paint.setColor(0x28453B52);
+        c.drawRect(x - 8, y - 6, x + 8, y - 2.6f, paint);
+
+        int iris = eyePower == EyePower.SPARKGLASS ? 0xFFD0362F
+                : eyePower == EyePower.HORIZON ? 0xFF7B4AC2 : normalColor;
         paint.setColor(iris);
-        c.drawOval(x - 3.6f, y - 3.7f, x + 3.6f, y + 3.8f, paint);
-        paint.setColor(INK);
-        c.drawOval(x - 1.35f, y - 2.45f, x + 1.35f, y + 2.55f, paint);
-        if (eyePower == EyePower.SPARKGLASS) segment(c, x - 1.7f, y + 1.6f, x + 1.8f, y - 1.9f, 0xFFFFDB94, 1.15f);
-        else if (eyePower == EyePower.HORIZON) segment(c, x - 2.9f, y, x + 2.9f, y, 0xFFF3CCFE, .85f);
-        else {
-            paint.setColor(0xFFF6E4D1);
-            c.drawCircle(x + 1.1f, y - 1.35f, .85f, paint);
+        c.drawOval(x - 4.0f, y - 4.1f, x + 4.0f, y + 4.2f, paint);
+
+        if (eyePower == EyePower.SPARKGLASS) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(0.75f);
+            paint.setColor(0xFFFFD885);
+            c.drawCircle(x, y, 2.7f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(INK);
+            c.drawCircle(x, y, 1.45f, paint);
+            paint.setColor(0xFFFFE59D);
+            c.drawCircle(x + 2.1f, y - 1.5f, 0.7f, paint);
+            c.drawCircle(x - 2.1f, y + 1.5f, 0.7f, paint);
+            c.drawCircle(x - 1.5f, y - 1.9f, 0.65f, paint);
+        } else if (eyePower == EyePower.HORIZON) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(0.7f);
+            paint.setColor(0xFFEBC8FF);
+            c.drawCircle(x, y, 3.1f, paint);
+            c.drawCircle(x, y, 1.85f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(INK);
+            c.drawCircle(x, y, 0.95f, paint);
+            segment(c, x - 3.2f, y, x + 3.2f, y, 0x88F8DFFF, 0.65f);
+        } else {
+            // Lower iris brightness + crisp dark pupil + dual highlights
+            paint.setColor(tone(iris, Color.WHITE, .28f));
+            c.drawOval(x - 2.6f, y + 0.8f, x + 2.6f, y + 3.6f, paint);
+            paint.setColor(INK);
+            c.drawOval(x - 1.5f, y - 2.1f, x + 1.5f, y + 2.1f, paint);
+            paint.setColor(0xFFFAF6F0);
+            c.drawCircle(x + 1.45f, y - 1.45f, 0.95f, paint);
+            c.drawCircle(x - 1.2f, y + 1.4f, 0.5f, paint);
         }
         c.restore();
     }
 
-    private void hair(Canvas c, int color, int hairStyle) {
+    private void drawScarsAndMarks(Canvas c, int skin) {
+        int scar = tone(skin, 0xFF9C3D4A, .58f);
+        int scarLight = tone(skin, 0xFFFFEFE0, .42f);
+        switch (part(5)) {
+            case 1 -> { // Cheek Mark
+                segment(c, 40, 63.5f, 48, 70.5f, scar, 1.3f);
+                segment(c, 40, 64.9f, 48, 71.9f, scarLight, 0.7f);
+            }
+            case 2 -> { // Brow Cut
+                segment(c, 42, 42, 47, 52, scar, 1.35f);
+                segment(c, 43.2f, 42, 48.2f, 52, scarLight, 0.65f);
+            }
+            case 3 -> { // Bridge Scar
+                segment(c, 53, 58.2f, 67, 59.2f, scar, 1.35f);
+                segment(c, 53, 59.5f, 67, 60.5f, scarLight, 0.65f);
+            }
+            case 4 -> { // Sage Marks
+                paint.setColor(0xFFC84336);
+                paint.setStrokeWidth(1.5f);
+                paint.setStyle(Paint.Style.STROKE);
+                c.drawLine(37, 54, 41, 51, paint);
+                c.drawLine(37, 57, 42, 57, paint);
+                c.drawLine(83, 54, 79, 51, paint);
+                c.drawLine(83, 57, 78, 57, paint);
+                paint.setStyle(Paint.Style.FILL);
+                c.drawOval(41, 45, 51, 48, paint);
+                c.drawOval(69, 45, 79, 48, paint);
+            }
+        }
+    }
+
+    private void drawFrontHair(Canvas c, int color, int hairStyle) {
         Path silhouette = HAIRSTYLES[hairStyle];
         layer(c, silhouette, color, 0);
         c.save();
         c.clipPath(silhouette);
-        layer(c, HAIR_SHADE, tone(color, INK, .44f), 0);
-        layer(c, HAIR_LIGHT, tone(color, 0xFFDABCC3, .28f), 0);
-        if (hairStyle == 0) layer(c, HAIR_FLASH, tone(color, 0xFFF8EEE3, .82f), 0);
+        layer(c, HAIR_CROWN_SHADE, tone(color, INK, .36f), 0);
+        layer(c, HAIR_HALO, tone(color, 0xFFF3E2E6, .28f), 0);
+        if (hairStyle == 0) layer(c, HAIR_FLASH, tone(color, 0xFFFAF2EA, .84f), 0);
         c.restore();
-        stroke(c, silhouette, INK, 1.65f);
+        stroke(c, silhouette, INK, 1.55f);
+
         if (hairStyle == 8) {
-            layer(c, BRAID, color, 1.6f);
-            for (int i = 0; i < 4; i++) segment(c, 25, 73 + i * 7, 34, 77 + i * 7, tone(color, INK, .65f), .9f);
+            layer(c, BRAID_DROP, color, 1.45f);
+            for (int i = 0; i < 4; i++) {
+                float y = 68 + i * 8;
+                segment(c, 26, y, 34, y + 4, tone(color, INK, .55f), 0.9f);
+                segment(c, 34, y, 26, y + 4, tone(color, INK, .55f), 0.9f);
+            }
+            paint.setColor(0xFFB43B46);
+            c.drawCircle(29, 105, 2.2f, paint);
         }
     }
 
-    private void accessories(Canvas c, int skin) {
-        int scar = tone(skin, 0xFF9F414F, .58f);
-        if (part(5) == 1) segment(c, 52, 66, 58, 75, scar, 1.35f);
-        if (part(5) == 2) segment(c, 49, 44, 52, 52, scar, 1.2f);
-        if (part(6) == 1) {
-            paint.setColor(0xFFE3B668);
-            c.drawCircle(35, 70, 2.3f, paint);
-        } else if (part(6) == 2) {
-            segment(c, 29, 34, 35, 39, 0xFFB84751, 3.6f);
-            segment(c, 33, 31, 30, 42, 0xFFBB4351, 2.5f);
-        } else if (part(6) == 3) {
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(INK);
-            paint.setStrokeWidth(1.10f);
-            c.drawOval(44, 50, 66, 64, paint);
-            c.drawOval(72, 48, 90, 62, paint);
-            paint.setStyle(Paint.Style.FILL);
-            segment(c, 66, 54, 72, 53, INK, 1.1f);
-            segment(c, 36, 53, 44, 53, INK, 1.1f);
+    private void drawAccessories(Canvas c, int skin) {
+        switch (part(6)) {
+            case 1 -> { // Gold Stud
+                paint.setColor(0xFFE7BA5C);
+                c.drawCircle(33, 65.5f, 2.1f, paint);
+                c.drawCircle(87, 65.5f, 2.1f, paint);
+                strokeCircle(c, 33, 65.5f, 2.1f, 0.9f);
+                strokeCircle(c, 87, 65.5f, 2.1f, 0.9f);
+                paint.setColor(0xFFFFF3C4);
+                c.drawCircle(32.4f, 64.9f, 0.65f, paint);
+                c.drawCircle(86.4f, 64.9f, 0.65f, paint);
+            }
+            case 2 -> { // Red Ribbon
+                paint.setColor(0xFFB83A47);
+                c.drawOval(25, 25, 36, 33, paint);
+                c.drawOval(34, 29, 43, 38, paint);
+                strokeOval(c, 25, 25, 36, 33, 1.1f);
+                strokeOval(c, 34, 29, 43, 38, 1.1f);
+                segment(c, 34, 33, 27, 43, 0xFFB83A47, 2.1f);
+                segment(c, 35, 33, 39, 44, 0xFF942A36, 2.0f);
+                paint.setColor(0xFFE05A66);
+                c.drawCircle(34.5f, 32.5f, 2.2f, paint);
+                strokeCircle(c, 34.5f, 32.5f, 2.2f, 1.0f);
+            }
+            case 3 -> { // Round Glasses
+                paint.setColor(0x22FFFFFF);
+                c.drawCircle(47.6f, 54.6f, 8.2f, paint);
+                c.drawCircle(72.4f, 54.6f, 8.2f, paint);
+                strokeCircle(c, 47.6f, 54.6f, 8.2f, 1.15f);
+                strokeCircle(c, 72.4f, 54.6f, 8.2f, 1.15f);
+                segment(c, 55.8f, 53.5f, 64.2f, 53.5f, INK, 1.15f);
+                segment(c, 35.5f, 53.0f, 39.4f, 53.5f, INK, 1.1f);
+                segment(c, 80.6f, 53.5f, 84.5f, 53.0f, INK, 1.1f);
+                segment(c, 43, 51, 46, 49, 0x66FFFFFF, 0.9f);
+                segment(c, 68, 51, 71, 49, 0x66FFFFFF, 0.9f);
+            }
+            case 4 -> { // Shinobi Headband (Forehead Protector)
+                paint.setColor(0xFF282D3F);
+                c.drawRoundRect(33, 27.0f, 87, 35.5f, 3, 3, paint);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(1.25f);
+                paint.setColor(INK);
+                c.drawRoundRect(33, 27.0f, 87, 35.5f, 3, 3, paint);
+                paint.setStyle(Paint.Style.FILL);
+                // Brushed steel plate
+                paint.setColor(0xFFC8CFD9);
+                c.drawRoundRect(46, 27.5f, 74, 35.0f, 2.2f, 2.2f, paint);
+                paint.setColor(0x88FFFFFF);
+                c.drawLine(50, 28.5f, 56, 34.0f, paint);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(1.1f);
+                paint.setColor(INK);
+                c.drawRoundRect(46, 27.5f, 74, 35.0f, 2.2f, 2.2f, paint);
+                // Rivets & spiral crest
+                paint.setStyle(Paint.Style.FILL);
+                c.drawCircle(48.5f, 29.6f, 0.7f, paint);
+                c.drawCircle(48.5f, 33.0f, 0.7f, paint);
+                c.drawCircle(71.5f, 29.6f, 0.7f, paint);
+                c.drawCircle(71.5f, 33.0f, 0.7f, paint);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(1.0f);
+                c.drawCircle(60, 31.3f, 2.1f, paint);
+                c.drawLine(62.1f, 31.3f, 64.1f, 29.7f, paint);
+                paint.setStyle(Paint.Style.FILL);
+            }
+            case 5 -> { // Kitsune Fox Mask on side of head
+                c.save();
+                c.rotate(18, 82, 24);
+                layer(c, FOX_MASK, 0xFFF7EFE6, 1.25f);
+                segment(c, 77, 24, 82, 25.5f, 0xFFB8333D, 1.35f);
+                segment(c, 87, 25.5f, 92, 24, 0xFFB8333D, 1.35f);
+                segment(c, 74, 28, 79, 31, 0xFFB8333D, 1.1f);
+                segment(c, 95, 28, 90, 31, 0xFFB8333D, 1.1f);
+                paint.setColor(0xFFB8333D);
+                c.drawCircle(84.5f, 20.5f, 1.2f, paint);
+                c.restore();
+            }
+            case 6 -> { // Lower Face Mask
+                layer(c, FACE_MASK, 0xFF282D3C, 1.45f);
+                segment(c, 39, 62, 60, 60, 0xFF474F66, 1.1f);
+                segment(c, 81, 62, 60, 60, 0xFF474F66, 1.1f);
+                segment(c, 44, 71, 60, 75, 0xFF1A1E28, 1.0f);
+                segment(c, 76, 71, 60, 75, 0xFF1A1E28, 1.0f);
+                paint.setColor(tone(skin, INK, .35f));
+                c.drawCircle(60, 58, 0.7f, paint);
+            }
         }
     }
 
@@ -263,6 +617,22 @@ final class Portrait extends View {
         paint.setStyle(Paint.Style.FILL);
     }
 
+    private void strokeCircle(Canvas c, float x, float y, float r, float width) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(width);
+        paint.setColor(INK);
+        c.drawCircle(x, y, r, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
+    private void strokeOval(Canvas c, float l, float t, float r, float b, float width) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(width);
+        paint.setColor(INK);
+        c.drawOval(l, t, r, b, paint);
+        paint.setStyle(Paint.Style.FILL);
+    }
+
     private void segment(Canvas c, float x, float y, float x2, float y2, int color, float width) {
         paint.setColor(color);
         paint.setStrokeWidth(width);
@@ -270,7 +640,8 @@ final class Portrait extends View {
     }
 
     private static int tone(int from, int to, float amount) {
-        return Color.rgb((int) (Color.red(from) + (Color.red(to) - Color.red(from)) * amount),
+        return Color.rgb(
+                (int) (Color.red(from) + (Color.red(to) - Color.red(from)) * amount),
                 (int) (Color.green(from) + (Color.green(to) - Color.green(from)) * amount),
                 (int) (Color.blue(from) + (Color.blue(to) - Color.blue(from)) * amount));
     }

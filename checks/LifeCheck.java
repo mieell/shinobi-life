@@ -33,16 +33,21 @@ final class LifeCheck {
         Life life = start(0, 2);
         check(life.get(Stat.LOOKS) == 84 && life.styleUp() && !life.styleUp(), "looks styling");
         check(life.interact(0) && life.bonds[0] == 71 && !life.interact(0), "looks and trust");
-        check(life.take(Missions.COURIER, true) && life.get(Stat.COINS) == 320, "Aon bonus");
+        check(life.gift(0) && life.bonds[0] == 77 && !life.gift(0), "keepsake gift");
+        check(life.allyFavor(0) && !life.allyFavor(0), "ally favor when trust >= 60");
+        check(!life.allyFavor(2), "ally favor locked under 60 trust");
+        check(life.meditate() && !life.meditate() && life.get(Stat.SKILL) == 11, "meditate once per season");
+        check(life.take(Missions.COURIER, true) && life.get(Stat.COINS) == 295, "Aon bonus");
         life.add(Stat.FAME, 60);
         for (int i = 0; i < 4; i++) life.advance();
         check(life.age() == 19, "age after four seasons");
         check(life.journal.get(0).detail().contains("crowd cheered"), "fame changes the journal");
         check(life.styleUp() && life.get(Stat.LOOKS) == 100, "styling resets");
+        check(life.meditate() && life.gift(1) && life.allyFavor(0), "seasonal actions reset");
         check(life.canStart(Missions.COURIER), "missions reopen after season");
         eyePowers();
         summonContracts();
-        System.out.println("Life checks passed for 23 combat paths, both eye powers, and five summons.");
+        System.out.println("Life checks passed for 23 combat paths, both eye powers, five summons, meditation, gifts, and favors.");
     }
 
     private static void combatArt(int clan) {

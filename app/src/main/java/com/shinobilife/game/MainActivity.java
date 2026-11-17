@@ -2,8 +2,15 @@ package com.shinobilife.game;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.res.ColorStateList;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
@@ -39,6 +46,7 @@ public final class MainActivity extends Activity {
     private static final int NIGHT = 0xFF181C2A, NIGHT_PANEL = 0xFF292C3D, LIGHT_TEXT = 0xFFF4DFCE;
     private static final int BLUSH = 0xFFF3DFDF, LILAC = 0xFFECE4F0, PURPLE = 0xFF593E6D;
     private static final int GREEN = 0xFF245B49, MINT = 0xFFE4EFE5, AMBER = 0xFF87592A;
+    private static final int GOLD = 0xFFD8A142, GOLD_BG = 0xFFFCF3DF, GOLD_INK = 0xFF704B10;
     private static final int MATCH = -1, WRAP = -2;
     private static final int JOURNAL_BATCH = 12;
     private static final Typeface BODY = Typeface.create("sans-serif", Typeface.NORMAL);
@@ -47,18 +55,20 @@ public final class MainActivity extends Activity {
     private static final String[] TABS = {"Life", "Missions", "Clans", "Summons", "People"};
     private static final String[] TAB_MARKS = {"life", "missions", "clans", "summons", "people"};
     private static final int[][] CONTACT_STYLE = {
-        {4, 1, 2, 1, 4, 0, 1}, {2, 3, 3, 4, 1, 0, 0}, {3, 2, 4, 3, 3, 1, 2}
+        {4, 1, 2, 1, 4, 0, 1}, {2, 3, 3, 4, 2, 0, 4}, {3, 2, 4, 3, 5, 1, 5}
     };
-    private static final int[] RIVAL_STYLE = {5, 1, 2, 4, 1, 2, 0};
+    private static final int[] RIVAL_STYLE = {5, 1, 2, 4, 6, 3, 4};
 
     private Life life;
-    private String page = "life";
+    private String page = "title";
+    private String returnPage = "title";
     private ScrollView scroll;
     private LinearLayout body;
     private Role filter;
     private int selectedClan, selectedContact;
     private int journalLimit = JOURNAL_BATCH;
-    private boolean chooseClan, editingOrigin;
+    private boolean chooseClan, editingOrigin, wardrobeMode;
+    private EyePower previewEye;
     private Draft draft;
     private Portrait editorPortrait;
     private final java.util.ArrayList<Portrait> appearancePreviews = new java.util.ArrayList<>();
@@ -66,7 +76,7 @@ public final class MainActivity extends Activity {
     private static final class Draft {
         String name = "Ren";
         int clan, village, presence = 1;
-        int[] style = {0, 0, 0, 2, 0, 0, 0};
+        int[] style = {0, 0, 0, 2, 0, 0, 4};
     }
 
     @Override public void onCreate(Bundle saved) {
@@ -77,7 +87,7 @@ public final class MainActivity extends Activity {
             life = Life.begin(starter.name, starter.clan, starter.village, starter.presence, starter.style);
             SaveGame.write(this, life);
         }
-        if (life.enemyHp > 0) page = "duel";
+        page = life.enemyHp > 0 ? "duel" : "title";
         if (Build.VERSION.SDK_INT >= 33) Back33.register(this, this::handleBack);
         render(0);
     }
@@ -114,11 +124,15 @@ public final class MainActivity extends Activity {
                 if (chooseClan) {
                     chooseClan = false;
                     go("create");
-                } else go("life");
+                } else go(returnPage.equals("title") ? "title" : "life");
             }
             case "person" -> go("people");
-            case "create" -> go("life");
-            case "life" -> moveTaskToBack(true);
+            case "create" -> {
+                wardrobeMode = false;
+                go(returnPage.equals("title") ? "title" : "life");
+            }
+            case "life" -> go("title");
+            case "title" -> moveTaskToBack(true);
             default -> go("life");
         }
     }
@@ -127,6 +141,24 @@ public final class MainActivity extends Activity {
         page = next;
         if (next.equals("life")) journalLimit = JOURNAL_BATCH;
         render(0);
+    }
+
+    private void openCreator(boolean wardrobe, String fromPage) {
+        draft = new Draft();
+        wardrobeMode = wardrobe;
+        editingOrigin = false;
+        returnPage = fromPage;
+        if (wardrobe) {
+            draft.name = life.name;
+            draft.clan = life.clan;
+            draft.village = life.village;
+            draft.presence = life.presence;
+            System.arraycopy(life.style, 0, draft.style, 0, Math.min(life.style.length, draft.style.length));
+            previewEye = life.eyeAwakened ? life.clan().eye() : null;
+        } else {
+            previewEye = null;
+        }
+        go("create");
     }
 
     private void update() {
@@ -173,7 +205,7 @@ public final class MainActivity extends Activity {
             getWindow().setStatusBarColor(NIGHT);
             getWindow().setNavigationBarColor(NIGHT);
         }
-        root.addView(header(), new LinearLayout.LayoutParams(MATCH, WRAP));
+        if (!page.equals("title")) root.addView(header(), new LinearLayout.LayoutParams(MATCH, WRAP));
         if (page.equals("create")) root.addView(editorPreview());
         scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -181,7 +213,7 @@ public final class MainActivity extends Activity {
         scroll.setVerticalScrollBarEnabled(false);
         root.addView(scroll, new LinearLayout.LayoutParams(MATCH, 0, 1));
         body = column();
-        inset(body, 16, 14, 16, 20);
+        inset(body, 16, page.equals("title") ? 16 : 14, 16, 20);
         scroll.addView(body, new ScrollView.LayoutParams(MATCH, WRAP));
         populateBody();
         if (page.equals("life")) root.addView(advanceBar());
@@ -193,7 +225,10 @@ public final class MainActivity extends Activity {
                 go("create");
             }));
         }
-        if (page.equals("create")) root.addView(footerButton("Begin life", this::confirmLife));
+        if (page.equals("create")) {
+            root.addView(footerButton(wardrobeMode ? "Save appearance" : "Begin life",
+                    wardrobeMode ? this::saveWardrobe : this::confirmLife));
+        }
         if (isTab() && !chooseClan) root.addView(dock());
         setContentView(window);
         window.requestApplyInsets();
@@ -202,6 +237,7 @@ public final class MainActivity extends Activity {
 
     private void populateBody() {
         switch (page) {
+            case "title" -> titlePage();
             case "life" -> lifePage();
             case "missions" -> missionsPage();
             case "clans" -> clansPage();
@@ -221,28 +257,50 @@ public final class MainActivity extends Activity {
 
     private View header() {
         LinearLayout bar = row();
-        inset(bar, 12, 3, 12, 3);
+        inset(bar, 12, 4, 12, 4);
         bar.setBackgroundColor(NIGHT);
         if (!isTab() || chooseClan) {
             Button back = button("←", Color.WHITE, NIGHT, null, this::handleBack);
-            back.setTextSize(22);
+            back.setTextSize(21);
             back.setContentDescription("Go back");
             bar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         } else {
+            LinearLayout homeBrand = row();
+            inset(homeBrand, 4, 6, 4, 6);
+            homeBrand.setMinimumHeight(dp(48));
             ImageView flag = new ImageView(this);
             flag.setImageResource(R.drawable.crest);
             flag.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            bar.addView(flag, new LinearLayout.LayoutParams(dp(35), dp(35)));
+            homeBrand.addView(flag, new LinearLayout.LayoutParams(dp(30), dp(30)));
+            TextView title = text("Shinobi Life", 18, Color.WHITE, Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
+            title.setSingleLine(true);
+            LinearLayout.LayoutParams titleBox = new LinearLayout.LayoutParams(WRAP, WRAP);
+            titleBox.setMarginStart(dp(7));
+            homeBrand.addView(title, titleBox);
+            clickable(homeBrand, NIGHT, null, () -> go("title"));
+            homeBrand.setContentDescription("Return to title screen");
+            bar.addView(homeBrand, new LinearLayout.LayoutParams(0, WRAP, 1));
+            Button titleBtn = button("Title", LIGHT_TEXT, NIGHT_PANEL, null, () -> go("title"));
+            titleBtn.setTextSize(12);
+            titleBtn.setSingleLine(true);
+            inset(titleBtn, 8, 4, 8, 4);
+            LinearLayout.LayoutParams titleBtnParams = new LinearLayout.LayoutParams(WRAP, WRAP);
+            titleBtnParams.setMarginEnd(dp(5));
+            bar.addView(titleBtn, titleBtnParams);
+            Button newBtn = button("New life", Color.WHITE, RED, null, () -> openCreator(false, page));
+            newBtn.setTextSize(12);
+            newBtn.setSingleLine(true);
+            inset(newBtn, 9, 4, 9, 4);
+            bar.addView(newBtn);
+            return bar;
         }
-        TextView title = text("Shinobi Life", 23, Color.WHITE, Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
+        String headerLabel = page.equals("create")
+                ? (wardrobeMode ? "Stylist Wardrobe" : "Create Shinobi")
+                : "Shinobi Life";
+        TextView title = text(headerLabel, 21, Color.WHITE, Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
         LinearLayout.LayoutParams titleBox = new LinearLayout.LayoutParams(0, WRAP, 1);
-        titleBox.setMarginStart(dp(9));
+        titleBox.setMarginStart(dp(8));
         bar.addView(title, titleBox);
-        if (isTab() && !chooseClan) bar.addView(button("New life", Color.WHITE, RED, null, () -> {
-            draft = new Draft();
-            editingOrigin = false;
-            go("create");
-        }));
         return bar;
     }
 
@@ -265,7 +323,10 @@ public final class MainActivity extends Activity {
             label.setGravity(Gravity.CENTER);
             tab.addView(label);
             clickable(tab, active ? RED : NIGHT, null, () -> {
-                if (next.equals("clans")) filter = null;
+                if (next.equals("clans")) {
+                    filter = null;
+                    returnPage = "life";
+                }
                 go(next);
             });
             tab.setContentDescription(TABS[i] + (active ? ", selected" : ""));
@@ -275,6 +336,174 @@ public final class MainActivity extends Activity {
         return layout;
     }
 
+    private void titlePage() {
+        body.addView(titleHeroBanner());
+        gap(body, 14);
+
+        // Active shinobi continue card
+        LinearLayout saveCard = card(WHITE, 14);
+        LinearLayout saveHead = row();
+        saveHead.addView(text("ACTIVE CHRONICLE", 11, RED, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
+        saveHead.addView(pill(life.date(), GOLD_INK, GOLD_BG));
+        saveCard.addView(saveHead);
+        gap(saveCard, 10);
+
+        LinearLayout heroRow = row();
+        EyePower eye = life.clan().eye();
+        Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5,
+                "Portrait of " + life.name, life.eyeAwakened ? eye : null);
+        heroRow.addView(portrait, new LinearLayout.LayoutParams(dp(88), dp(88)));
+        LinearLayout details = column();
+        inset(details, 12, 0, 0, 0);
+        LinearLayout nameLine = row();
+        addSeal(nameLine, life.clan, 26);
+        TextView charName = text(displayName(life.name, life.clan), 22, INK, DISPLAY);
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, WRAP, 1);
+        nameParams.setMarginStart(dp(8));
+        nameLine.addView(charName, nameParams);
+        details.addView(nameLine);
+        gap(details, 3);
+        details.addView(text(life.village() + " · " + life.rank(), 13, PURPLE, MEDIUM));
+        gap(details, 6);
+        LinearLayout statStrip = row();
+        statStrip.addView(miniStat("Coins", money(life.get(Stat.COINS)), AMBER), new LinearLayout.LayoutParams(0, WRAP, 1));
+        statStrip.addView(miniStat("Skill", Integer.toString(life.get(Stat.SKILL)), GREEN), new LinearLayout.LayoutParams(0, WRAP, 1));
+        statStrip.addView(miniStat("Fame", Integer.toString(life.get(Stat.FAME)), RED), new LinearLayout.LayoutParams(0, WRAP, 1));
+        statStrip.addView(miniStat("Wins", Integer.toString(life.victories), PURPLE), new LinearLayout.LayoutParams(0, WRAP, 1));
+        details.addView(statStrip);
+        heroRow.addView(details, new LinearLayout.LayoutParams(0, WRAP, 1));
+        saveCard.addView(heroRow);
+        gap(saveCard, 12);
+
+        String ctaLabel = life.enemyHp > 0
+                ? "Resume Cedar Pass Duel  ›"
+                : "Continue as " + displayName(life.name, life.clan) + "  ›";
+        buttonIn(saveCard, ctaLabel, Color.WHITE, RED, () -> go(life.enemyHp > 0 ? "duel" : "life"));
+        body.addView(saveCard);
+        gap(body, 11);
+
+        // Title menu actions
+        titleActionCard("New Shinobi Life",
+                "Customize appearance, village origin & 23 clan paths",
+                "spark", RED, BLUSH, () -> openCreator(false, "title"));
+        gap(body, 8);
+        titleActionCard("Wardrobe & Appearance",
+                "Change hairstyle, outfit, scars, headband or mask anytime",
+                "wardrobe", PURPLE, LILAC, () -> openCreator(true, "title"));
+        gap(body, 8);
+        titleActionCard("Clan & Bloodline Codex",
+                "Inspect all 22 clans, combat jutsu, summons & eye powers",
+                "clans", GREEN, MINT, () -> {
+                    chooseClan = false;
+                    filter = null;
+                    returnPage = "title";
+                    go("clans");
+                });
+        gap(body, 12);
+
+        // Career milestones overview
+        LinearLayout milestones = card(WHITE, 13);
+        milestones.addView(text("CHRONICLE MILESTONES", 11, MUTED, DISPLAY));
+        gap(milestones, 8);
+        LinearLayout row1 = row();
+        row1.addView(milestoneChip("Summon Pacts", life.signedSummonCount() + " / " + Summon.ALL.length, GREEN),
+                new LinearLayout.LayoutParams(0, WRAP, 1));
+        row1.addView(new View(this), new LinearLayout.LayoutParams(dp(8), 1));
+        row1.addView(milestoneChip("Trusted Allies", life.trustedAllyCount() + " / " + Life.CONTACTS.length, AMBER),
+                new LinearLayout.LayoutParams(0, WRAP, 1));
+        milestones.addView(row1);
+        gap(milestones, 7);
+        LinearLayout row2 = row();
+        String bloodlineStatus = eye == null ? "Standard Lineage" : life.eyeAwakened ? eye.title : "Dormant (" + eye.title + ")";
+        row2.addView(milestoneChip("Bloodline Eye", bloodlineStatus, PURPLE),
+                new LinearLayout.LayoutParams(0, WRAP, 1));
+        row2.addView(new View(this), new LinearLayout.LayoutParams(dp(8), 1));
+        row2.addView(milestoneChip("Journal Entries", Integer.toString(life.journal.size()), RED),
+                new LinearLayout.LayoutParams(0, WRAP, 1));
+        milestones.addView(row2);
+        body.addView(milestones);
+    }
+
+    private FrameLayout titleHeroBanner() {
+        ImageView scenery = artwork(R.drawable.village_dusk);
+        TitleSceneArt overlay = new TitleSceneArt(this);
+        LinearLayout content = column();
+        inset(content, 18, 22, 18, 20);
+        content.setMinimumHeight(dp(186));
+        content.setGravity(Gravity.BOTTOM);
+
+        LinearLayout topBadgeRow = row();
+        ImageView crest = new ImageView(this);
+        crest.setImageResource(R.drawable.crest);
+        crest.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        topBadgeRow.addView(crest, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        TextView badge = pill("OFFLINE SHINOBI RPG", GOLD, 0xCC222436);
+        LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(WRAP, WRAP);
+        badgeParams.setMarginStart(dp(8));
+        topBadgeRow.addView(badge, badgeParams);
+        content.addView(topBadgeRow);
+        gap(content, 24);
+
+        TextView title = text("SHINOBI LIFE", 31, Color.WHITE, Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
+        if (Build.VERSION.SDK_INT >= 28) title.setAccessibilityHeading(true);
+        content.addView(title);
+        gap(content, 3);
+        content.addView(text("Chronicles of the Three Villages · 23 Paths & Summons", 13, LIGHT_TEXT, MEDIUM));
+
+        FrameLayout frame = new FrameLayout(this) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                measureChild(content, widthSpec, heightSpec);
+                int width = resolveSize(content.getMeasuredWidth(), widthSpec);
+                int height = resolveSize(content.getMeasuredHeight(), heightSpec);
+                setMeasuredDimension(width, height);
+                int exactW = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
+                int exactH = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
+                scenery.measure(exactW, exactH);
+                overlay.measure(exactW, exactH);
+            }
+        };
+        frame.setBackground(box(NIGHT, null, 20));
+        frame.setClipToOutline(true);
+        frame.addView(scenery, new FrameLayout.LayoutParams(MATCH, MATCH));
+        frame.addView(overlay, new FrameLayout.LayoutParams(MATCH, MATCH));
+        frame.addView(content, new FrameLayout.LayoutParams(MATCH, WRAP));
+        return frame;
+    }
+
+    private void titleActionCard(String title, String subtitle, String mark, int accent, int badgeFill, Runnable action) {
+        LinearLayout card = row();
+        inset(card, 12, 11, 12, 11);
+        FrameLayout iconWrap = new FrameLayout(this);
+        iconWrap.setBackground(box(badgeFill, null, 12));
+        iconWrap.addView(new Marks(this, mark, accent), new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
+        card.addView(iconWrap, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout info = column();
+        inset(info, 12, 0, 8, 0);
+        info.addView(text(title, 17, INK, DISPLAY));
+        info.addView(text(subtitle, 12, MUTED, BODY));
+        card.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
+        card.addView(text("›", 24, accent, BODY));
+        clickable(card, WHITE, BORDER, action);
+        card.setContentDescription(title + ". " + subtitle);
+        body.addView(card);
+    }
+
+    private LinearLayout miniStat(String label, String value, int color) {
+        LinearLayout box = column();
+        box.addView(text(value, 14, color, DISPLAY));
+        box.addView(text(label, 11, MUTED, MEDIUM));
+        return box;
+    }
+
+    private LinearLayout milestoneChip(String label, String value, int accent) {
+        LinearLayout chip = column();
+        chip.setBackground(box(PAPER, BORDER, 12));
+        inset(chip, 10, 8, 10, 8);
+        chip.addView(text(label, 11, MUTED, MEDIUM));
+        chip.addView(text(value, 14, accent, DISPLAY));
+        return chip;
+    }
+
     private void lifePage() {
         LinearLayout hero = column();
         inset(hero, 14, 13, 14, 14);
@@ -282,79 +511,125 @@ public final class MainActivity extends Activity {
         heading.addView(text("Your life", 15, LIGHT_TEXT, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
         heading.addView(pill(life.date(), Color.WHITE, NIGHT_PANEL));
         hero.addView(heading);
-        gap(hero, 8);
+        gap(hero, 9);
         LinearLayout card = row();
         EyePower eye = life.clan().eye();
         Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5, "Portrait of " + life.name,
                 life.eyeAwakened ? eye : null);
-        card.addView(portrait, new LinearLayout.LayoutParams(dp(83), dp(83)));
+        card.addView(portrait, new LinearLayout.LayoutParams(dp(86), dp(86)));
         LinearLayout info = column();
         inset(info, 12, 0, 0, 0);
-        info.addView(text(displayName(life.name, life.clan), 26, Color.WHITE, DISPLAY));
+        LinearLayout titleRow = row();
+        addSeal(titleRow, life.clan, 24);
+        TextView nameView = text(displayName(life.name, life.clan), 24, Color.WHITE, DISPLAY);
+        LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(0, WRAP, 1);
+        nameParams.setMarginStart(dp(7));
+        titleRow.addView(nameView, nameParams);
+        info.addView(titleRow);
         info.addView(text(life.village() + " · " + life.rank(), 13, LIGHT_TEXT, MEDIUM));
-        gap(info, 4);
-        info.addView(text(money(life.get(Stat.COINS)) + " coins · Skill " + life.get(Stat.SKILL), 13, Color.WHITE, MEDIUM));
+        gap(info, 6);
+        LinearLayout quickStats = row();
+        addHeroBadge(quickStats, "Coins", money(life.get(Stat.COINS)), true);
+        addHeroBadge(quickStats, "Skill", Integer.toString(life.get(Stat.SKILL)), true);
+        addHeroBadge(quickStats, "Wins", Integer.toString(life.victories), true);
+        addHeroBadge(quickStats, "Pacts", life.signedSummonCount() + "/" + Summon.ALL.length, false);
+        info.addView(quickStats);
         card.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
         hero.addView(card);
         body.addView(scene(hero));
-        gap(body, 10);
-        LinearLayout meters = card(WHITE, 12);
+        gap(body, 8);
+
+        LinearLayout meters = card(WHITE, 11);
         meters.addView(meterPair(Stat.HEALTH, GREEN, Stat.CHAKRA, PURPLE));
-        gap(meters, 9);
+        gap(meters, 7);
         meters.addView(meterPair(Stat.STAMINA, AMBER, Stat.MOOD, RED));
-        gap(meters, 9);
+        gap(meters, 7);
         meters.addView(meterPair(Stat.LOOKS, RED, Stat.FAME, PURPLE));
+        gap(meters, 6);
+        String fameHint = life.get(Stat.FAME) >= 60 ? "Renowned (+5 Mood/season)"
+                : life.get(Stat.FAME) >= 25 ? "Recognized (+3 Mood/season)" : "25 Fame unlocks recognition";
+        String looksHint = life.get(Stat.LOOKS) >= 75 ? "75+ Looks active (+2 Trust)" : "75 Looks boosts visits";
+        meters.addView(text(looksHint + " · " + fameHint, 11, MUTED, MEDIUM));
         body.addView(meters);
-        gap(body, 13);
+        gap(body, 9);
+
         if (!life.journal.isEmpty()) {
             latestEvent(life.journal.get(0));
-            gap(body, 12);
+            gap(body, 9);
         }
+
         LinearLayout actions = row();
-        quick(actions, "Train", "training", () -> {
+        quick(actions, "Train", life.get(Stat.SKILL) >= 100 ? "Max" : "+3 Skill", "training", () -> {
             if (!life.train()) message("Training needs 16 stamina and room to increase Skill.");
             else update();
         });
-        quick(actions, "Style", "spark", () -> {
-            new AlertDialog.Builder(this).setTitle("Visit the stylist")
-                    .setMessage("Spend 35 coins for up to +8 Looks. Available once each season. At 75 Looks, social visits build more Trust.")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Visit", (dialog, which) -> {
-                        if (life.styled) message("You already visited this season.");
-                        else if (life.get(Stat.LOOKS) == 100) message("Your Looks are already at 100.");
-                        else if (!life.styleUp()) message("You need 35 coins.");
-                        else update();
-                    }).show();
+        quick(actions, "Meditate", life.meditated ? "Done" : "+22 Cha", "meditate", () -> {
+            if (!life.meditate()) message("You already meditated this season.");
+            else update();
         });
-        quick(actions, "Work", "coin", () -> {
+        quick(actions, "Style", life.styled ? "Wardrobe" : "35 / Free", "wardrobe", this::openStyleMenu);
+        quick(actions, "Work", life.worked ? "Done" : "+55 Coin", "coin", () -> {
             if (!life.work()) message(life.worked ? "You already worked this season." : "You need 12 stamina.");
             else update();
         });
-        quick(actions, "Rest", "life", () -> {
+        quick(actions, "Rest", life.rested ? "Done" : "+20 HP", "life", () -> {
             if (!life.rest()) message("You already rested this season.");
             else update();
         });
         body.addView(actions);
+
         if (eye != null) {
             gap(body, 10);
             LinearLayout bloodline = card(LILAC, 12);
             bloodline.addView(text(eye.title, 19, INK, DISPLAY));
-            bloodline.addView(text(life.eyeAwakened ? "Awakened · " + eye.move
-                    : "Awakens at " + eye.requirement(), 14, PURPLE, MEDIUM));
+            if (life.eyeAwakened) {
+                bloodline.addView(text("Awakened · " + eye.move + " (" + eye.description() + ")", 13, PURPLE, MEDIUM));
+            } else {
+                String progress = "Skill " + life.get(Stat.SKILL) + "/" + eye.skill
+                        + (eye.wins > 0 ? " · Cedar Pass wins " + life.victories + "/" + eye.wins : "");
+                bloodline.addView(text("Dormant · Awakens at " + eye.requirement() + " (" + progress + ")", 13, PURPLE, MEDIUM));
+            }
             if (life.canAwakenEye()) {
-                gap(bloodline, 5);
+                gap(bloodline, 6);
                 buttonIn(bloodline, "Awaken " + eye.title, PURPLE, WHITE, () -> {
                     if (life.awakenEye()) update();
                 });
             }
             body.addView(bloodline);
         }
+
         if (life.journal.size() > 1) {
-            gap(body, 18);
+            gap(body, 16);
             body.addView(text("Life journal", 23, INK, DISPLAY));
             gap(body, 8);
             appendJournal(1);
         }
+    }
+
+    private void addHeroBadge(LinearLayout host, String label, String value, boolean spacer) {
+        LinearLayout badge = column();
+        badge.setBackground(box(0x88292C3D, null, 8));
+        inset(badge, 5, 4, 5, 4);
+        badge.addView(text(value, 13, Color.WHITE, DISPLAY));
+        badge.addView(text(label, 10, LIGHT_TEXT, MEDIUM));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, WRAP, 1);
+        if (spacer) params.setMarginEnd(dp(4));
+        host.addView(badge, params);
+    }
+
+    private void openStyleMenu() {
+        AlertDialog.Builder dialog = new AlertDialog.Builder(this)
+                .setTitle("Stylist & Wardrobe")
+                .setMessage("Change your hair, outfit, scars, and gear anytime for free, or pay 35 coins once per season for +8 Looks (75+ Looks improves Trust gains).")
+                .setNeutralButton("Open Wardrobe (Free)", (d, w) -> openCreator(true, "life"))
+                .setNegativeButton("Close", null);
+        if (!life.styled && life.get(Stat.LOOKS) < 100) {
+            dialog.setPositiveButton("Style up (35 coins)", (d, w) -> {
+                if (!life.styleUp()) message("You need 35 coins.");
+                else update();
+            });
+        }
+        dialog.show();
     }
 
     private void latestEvent(Life.Event event) {
@@ -415,7 +690,18 @@ public final class MainActivity extends Activity {
         heading("Mission board", life.village() + " · " + life.date());
         for (Missions mission : Missions.values()) {
             LinearLayout card = card(WHITE, 14);
-            card.addView(text(mission.role.label + (life.matches(mission) ? " · Your specialty" : ""), 12, RED, MEDIUM));
+            LinearLayout topRow = row();
+            topRow.addView(text(mission.role.label + (life.matches(mission) ? " · Your specialty" : ""), 12, RED, MEDIUM),
+                    new LinearLayout.LayoutParams(0, WRAP, 1));
+            for (Summon summon : Summon.ALL) {
+                if (summon.mission != mission) continue;
+                String tag = life.hasSummon(summon) ? "Companion: " + summon.title
+                        : life.knowsSummon(summon) ? "Pact ready: " + summon.title
+                        : "Unlocks " + summon.title;
+                topRow.addView(pill(tag, life.hasSummon(summon) ? GREEN : AMBER, life.hasSummon(summon) ? MINT : GOLD_BG));
+            }
+            card.addView(topRow);
+            gap(card, 3);
             card.addView(text(mission.title, 21, INK, DISPLAY));
             card.addView(text(mission.description, 14, MUTED, BODY));
             gap(card, 7);
@@ -470,29 +756,46 @@ public final class MainActivity extends Activity {
         EyePower eye = life.clan().eye();
         LinearLayout arena = row();
         arena.addView(fighter(life.name, life.style, life.age(), LILAC, life.get(Stat.HEALTH), 100,
-                life.eyeAwakened ? eye : null), new LinearLayout.LayoutParams(0, WRAP, 1));
+                life.get(Stat.CHAKRA), life.eyeAwakened ? eye : null), new LinearLayout.LayoutParams(0, WRAP, 1));
         TextView vs = text("VS", 16, RED, DISPLAY);
         inset(vs, 8, 0, 8, 0);
         arena.addView(vs);
-        arena.addView(fighter("Ibara", RIVAL_STYLE, 27, BLUSH, life.enemyHp, 72, null), new LinearLayout.LayoutParams(0, WRAP, 1));
+        arena.addView(fighter("Ibara", RIVAL_STYLE, 27, BLUSH, life.enemyHp, 72, -1, null),
+                new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(arena);
-        gap(body, 12);
-        LinearLayout log = card(MINT, 15);
-        log.addView(text(life.enemyHp > 0 ? "Round " + life.round + " · " + life.get(Stat.CHAKRA) + " chakra" : "Match ended", 14, GREEN, MEDIUM));
-        log.addView(text(life.duelLog, 16, INK, BODY));
+        gap(body, 10);
+
+        LinearLayout log = card(MINT, 14);
+        LinearLayout logHead = row();
+        logHead.addView(text(life.enemyHp > 0 ? "Round " + life.round + " · " + life.get(Stat.CHAKRA) + " chakra" : "Match ended",
+                14, GREEN, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
+        if (life.enemyHp > 0) {
+            boolean heavy = life.incomingDamage() == 18;
+            logHead.addView(pill((heavy ? "Cedar Breaker · 18 dmg" : "Stone Jab · 10 dmg"),
+                    heavy ? RED : MUTED, heavy ? BLUSH : WHITE));
+        }
+        log.addView(logHead);
+        gap(log, 4);
+        log.addView(text(life.duelLog, 15, INK, BODY));
+        if (life.enemyHp > 0 && life.burnTurns > 0) {
+            gap(log, 4);
+            log.addView(text("Burn active: 5 fire damage next turn", 13, RED, MEDIUM));
+        }
         if (life.enemyHp > 0 && life.eyeAwakened && eye == EyePower.SPARKGLASS) {
+            gap(log, 4);
             log.addView(text("Sparkglass reads " + (life.incomingDamage() == 18 ? "Cedar Breaker" : "Stone Jab")
-                    + " next · " + life.incomingDamage() + " base damage", 14, PURPLE, MEDIUM));
+                    + " next · " + life.incomingDamage() + " base damage", 13, PURPLE, MEDIUM));
         }
         log.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         body.addView(log);
         gap(body, 12);
+
         if (life.enemyHp <= 0) {
             buttonIn(body, "Return to mission board", Color.WHITE, RED, () -> go("missions"));
             return;
         }
         duelButton("Strike · " + life.strikeDamage() + " damage", Life.Move.STRIKE, Color.WHITE, RED);
-        duelButton("Guard · Recover 8 chakra", Life.Move.GUARD, GREEN, MINT);
+        duelButton("Guard · Recover 8 chakra (reduces counter to 3)", Life.Move.GUARD, GREEN, MINT);
         CombatArt art = CombatArt.forClan(life.clan());
         duelArt(art.name(), art.description(), life.artDuelBlocker(art), Life.Move.TECHNIQUE);
         if (eye != null && life.eyeAwakened) {
@@ -522,17 +825,29 @@ public final class MainActivity extends Activity {
         buttonIn(body, "Concede match", MUTED, WHITE, this::handleBack);
     }
 
-    private LinearLayout fighter(String name, int[] style, int age, int color, int hp, int max, EyePower eye) {
+    private LinearLayout fighter(String name, int[] style, int age, int color, int hp, int max, int chakra, EyePower eye) {
         LinearLayout card = card(color, 10);
         card.setGravity(Gravity.CENTER);
         card.addView(new Portrait(this, style, age, color == LILAC ? 0xFFD9C7E9 : 0xFFE7C3B0, name, eye),
-                new LinearLayout.LayoutParams(dp(75), dp(75)));
+                new LinearLayout.LayoutParams(dp(78), dp(78)));
         TextView label = text(name, 19, INK, DISPLAY);
         label.setGravity(Gravity.CENTER);
         card.addView(label);
         card.addView(text(hp + "/" + max + " HP", 13, GREEN, MEDIUM));
-        gap(card, 6);
+        gap(card, 4);
         card.addView(progress(hp * 100 / max, GREEN));
+        if (chakra >= 0) {
+            gap(card, 5);
+            card.addView(text(chakra + "/100 Chakra", 12, PURPLE, MEDIUM));
+            gap(card, 3);
+            card.addView(progress(chakra, PURPLE));
+        } else {
+            gap(card, 5);
+            boolean heavy = life.incomingDamage() == 18;
+            card.addView(text("Next: " + (heavy ? "Cedar Breaker" : "Stone Jab"), 12, heavy ? RED : MUTED, MEDIUM));
+            gap(card, 3);
+            card.addView(progress(life.incomingDamage() * 100 / 18, heavy ? RED : AMBER));
+        }
         return card;
     }
 
@@ -571,9 +886,15 @@ public final class MainActivity extends Activity {
                 "Your clan shapes your starting perk, jutsu, and specialty. Two lineages can awaken inherited eye powers.");
         if (!chooseClan) {
             LinearLayout current = card(LILAC, 13);
-            current.addView(text("YOUR LINEAGE", 11, PURPLE, MEDIUM));
-            current.addView(text(life.clan().name(), 24, INK, DISPLAY));
-            current.addView(text(life.clan().role().label + " · " + CombatArt.forClan(life.clan()).name(), 14, PURPLE, MEDIUM));
+            LinearLayout row = row();
+            addSeal(row, life.clan, 46);
+            LinearLayout info = column();
+            inset(info, 10, 0, 0, 0);
+            info.addView(text("YOUR LINEAGE", 11, PURPLE, MEDIUM));
+            info.addView(text(life.clan().name(), 22, INK, DISPLAY));
+            info.addView(text(life.clan().role().label + " · " + CombatArt.forClan(life.clan()).name(), 13, PURPLE, MEDIUM));
+            row.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
+            current.addView(row);
             clickable(current, LILAC, null, () -> detail(life.clan));
             body.addView(current);
             gap(body, 10);
@@ -609,7 +930,7 @@ public final class MainActivity extends Activity {
         Clans.Clan clan = Clans.ALL[index];
         LinearLayout item = row();
         inset(item, 12, 9, 12, 9);
-        addSeal(item, index, 44);
+        addSeal(item, index, 46);
         LinearLayout info = column();
         inset(info, 10, 0, 8, 0);
         info.addView(text(clan.name(), 20, INK, DISPLAY));
@@ -654,10 +975,10 @@ public final class MainActivity extends Activity {
         fact("Origins", clan.origin());
         if (!chooseClan && selectedClan != life.clan) {
             buttonIn(body, "Start a life as " + clan.name(), Color.WHITE, RED, () -> {
-                draft = new Draft();
+                openCreator(false, "clans");
                 draft.clan = selectedClan;
                 editingOrigin = true;
-                go("create");
+                render(0);
             });
         }
     }
@@ -665,15 +986,14 @@ public final class MainActivity extends Activity {
     private void addSeal(LinearLayout host, int index, int size) {
         Clans.Clan clan = Clans.ALL[index];
         FrameLayout seal = new FrameLayout(this);
-        seal.setBackground(box(clan.color(), null, 15));
+        seal.setBackground(box(clan.color(), null, Math.max(8, size / 3)));
         seal.addView(new Marks(this, Integer.toString(index), 0xFFFFE8BE),
-                new FrameLayout.LayoutParams(dp(size * 5 / 8), dp(size * 5 / 8), Gravity.CENTER));
+                new FrameLayout.LayoutParams(dp(size * 3 / 4), dp(size * 3 / 4), Gravity.CENTER));
         host.addView(seal, new LinearLayout.LayoutParams(dp(size), dp(size)));
     }
 
     private void summonsPage() {
-        int owned = 0;
-        for (Summon summon : Summon.ALL) if (life.hasSummon(summon)) owned++;
+        int owned = life.signedSummonCount();
         heading("Summon contracts", owned + " of " + Summon.ALL.length
                 + " companions. Call one on a matching assignment or up to two different companions in a duel.");
         for (Summon summon : Summon.ALL) {
@@ -682,8 +1002,8 @@ public final class MainActivity extends Activity {
             FrameLayout badge = new FrameLayout(this);
             badge.setBackground(box(summon.color, null, 15));
             badge.addView(new Marks(this, summon.name(), 0xFFFFE8BE),
-                    new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER));
-            identity.addView(badge, new LinearLayout.LayoutParams(dp(50), dp(50)));
+                    new FrameLayout.LayoutParams(dp(42), dp(42), Gravity.CENTER));
+            identity.addView(badge, new LinearLayout.LayoutParams(dp(56), dp(56)));
             LinearLayout name = column();
             inset(name, 10, 0, 0, 0);
             name.addView(text(summon.title, 20, INK, DISPLAY));
@@ -726,18 +1046,22 @@ public final class MainActivity extends Activity {
     }
 
     private void peoplePage() {
-        heading("Relationships", "Spend time with people in your life and build Trust.");
+        heading("Relationships", "Spend time, offer gifts, and unlock ally favors at 60 Trust.");
         for (int i = 0; i < Life.CONTACTS.length; i++) {
             int contact = i;
             LinearLayout item = row();
             inset(item, 12, 9, 12, 9);
-            item.addView(contactPortrait(i), new LinearLayout.LayoutParams(dp(59), dp(59)));
+            item.addView(contactPortrait(i), new LinearLayout.LayoutParams(dp(64), dp(64)));
             LinearLayout info = column();
             inset(info, 10, 0, 8, 0);
-            info.addView(text(Life.CONTACTS[i], 21, INK, DISPLAY));
+            LinearLayout top = row();
+            top.addView(text(Life.CONTACTS[i], 20, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
+            top.addView(pill(Life.trustTier(life.bonds[i]), GREEN, MINT));
+            info.addView(top);
             info.addView(text(Life.ROLES[i] + " · Age " + contactAge(i), 13, MUTED, MEDIUM));
-            gap(info, 5);
-            info.addView(text(life.bonds[i] + " / 100 Trust", 12, GREEN, MEDIUM));
+            gap(info, 4);
+            info.addView(text(life.bonds[i] + " / 100 Trust"
+                    + (life.canAllyFavor(i) ? " · Favor ready" : ""), 12, GREEN, MEDIUM));
             gap(info, 3);
             info.addView(progress(life.bonds[i], GREEN));
             item.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
@@ -763,33 +1087,73 @@ public final class MainActivity extends Activity {
         int contact = selectedContact;
         LinearLayout intro = row();
         inset(intro, 14, 13, 14, 13);
-        intro.addView(contactPortrait(contact), new LinearLayout.LayoutParams(dp(82), dp(82)));
+        intro.addView(contactPortrait(contact), new LinearLayout.LayoutParams(dp(86), dp(86)));
         LinearLayout identity = column();
         inset(identity, 12, 0, 0, 0);
-        identity.addView(text(Life.CONTACTS[contact], 29, Color.WHITE, DISPLAY));
-        identity.addView(text(Life.ROLES[contact] + " · Age " + contactAge(contact), 14, LIGHT_TEXT, MEDIUM));
+        identity.addView(text(Life.CONTACTS[contact], 28, Color.WHITE, DISPLAY));
+        identity.addView(text(Life.ROLES[contact] + " · Age " + contactAge(contact) + " · " + Life.trustTier(life.bonds[contact]),
+                13, LIGHT_TEXT, MEDIUM));
         intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(scene(intro));
         gap(body, 9);
+
         LinearLayout trust = card(WHITE, 13);
         trust.addView(text("Trust · " + life.bonds[contact] + "/100", 16, GREEN, DISPLAY));
         gap(trust, 6);
         trust.addView(progress(life.bonds[contact], GREEN));
         body.addView(trust);
-        gap(body, 12);
+        gap(body, 10);
+
         String[] history = {
             "Nao took you to lantern festivals when you were too small to carry your own.",
             "You and Jun used to race home from academy drills. Jun still insists you cut corners.",
             "Mika was your closest match in academy trials and still asks how your training is going."
         };
         fact("How you met", history[contact]);
+
         if ((life.interacted & (1 << contact)) != 0) {
             body.addView(pill("You spent time together this season", GREEN, MINT));
         } else {
-            buttonIn(body, "Spend time together", Color.WHITE, RED, () -> {
+            int gain = life.get(Stat.LOOKS) >= 75 ? 7 : 5;
+            buttonIn(body, "Spend time together · +" + gain + " Trust", Color.WHITE, RED, () -> {
                 if (life.interact(contact)) update();
             });
         }
+        gap(body, 8);
+
+        if ((life.gifted & (1 << contact)) != 0) {
+            body.addView(pill("Keepsake given this season", MUTED, WHITE));
+        } else if (life.bonds[contact] >= 100) {
+            body.addView(pill("Trust is already at 100", GREEN, MINT));
+        } else {
+            buttonIn(body, "Give market keepsake · " + Life.GIFT_COST + " coins (+6 Trust)", PURPLE, LILAC, () -> {
+                if (!life.gift(contact)) message("You need " + Life.GIFT_COST + " coins.");
+                else update();
+            });
+        }
+        gap(body, 10);
+
+        String[] favorTitles = {"Lantern Bento", "Market Tip-Off", "Rooftop Sparring"};
+        String[] favorEffects = {
+            "Recover +16 Stamina and +12 Health from Nao's home cooking.",
+            "Collect +40 Coins and +12 Chakra from Jun's courier lead.",
+            "Gain +2 Skill and +5 Fame sparring with Mika."
+        };
+        LinearLayout favorCard = card(GOLD_BG, 13);
+        favorCard.addView(text("Sworn Ally Favor · " + favorTitles[contact], 17, GOLD_INK, DISPLAY));
+        gap(favorCard, 3);
+        favorCard.addView(text(favorEffects[contact], 13, MUTED, BODY));
+        gap(favorCard, 8);
+        if (life.bonds[contact] < Life.FAVOR_TRUST) {
+            favorCard.addView(pill("Unlocks at " + Life.FAVOR_TRUST + " Trust", AMBER, WHITE));
+        } else if ((life.favored & (1 << contact)) != 0) {
+            favorCard.addView(pill("Favor claimed this season", GREEN, MINT));
+        } else {
+            buttonIn(favorCard, "Ask for " + favorTitles[contact], Color.WHITE, AMBER, () -> {
+                if (life.allyFavor(contact)) update();
+            });
+        }
+        body.addView(favorCard);
     }
 
     private View editorPreview() {
@@ -797,23 +1161,61 @@ public final class MainActivity extends Activity {
         inset(surround, 16, 8, 16, 0);
         LinearLayout preview = row();
         inset(preview, 12, 10, 12, 10);
-        editorPortrait = new Portrait(this, draft.style, 18, 0xFFEBCEB5, "Avatar preview");
-        preview.addView(editorPortrait, new LinearLayout.LayoutParams(dp(96), dp(96)));
+        editorPortrait = new Portrait(this, draft.style, wardrobeMode ? life.age() : 18, 0xFFEBCEB5,
+                "Avatar preview", previewEye);
+        preview.addView(editorPortrait, new LinearLayout.LayoutParams(dp(106), dp(106)));
         LinearLayout control = column();
-        inset(control, 11, 0, 0, 0);
-        control.addView(text("Create your shinobi", 21, Color.WHITE, DISPLAY));
+        inset(control, 12, 0, 0, 0);
+        control.addView(text(wardrobeMode ? "Stylist Wardrobe" : "Create your shinobi", 20, Color.WHITE, DISPLAY));
+        String previewName = wardrobeMode ? displayName(life.name, life.clan)
+                : displayName(draft.name.trim().isEmpty() ? "Ren" : draft.name.trim(), draft.clan);
+        control.addView(text(previewName + " · " + Clans.ALL[wardrobeMode ? life.clan : draft.clan].role().label,
+                12, LIGHT_TEXT, MEDIUM));
+        gap(control, 6);
+        LinearLayout btnRow = row();
         Button shuffle = button("Randomize", Color.WHITE, NIGHT_PANEL, null, this::randomize);
-        LinearLayout.LayoutParams shuffleParams = new LinearLayout.LayoutParams(WRAP, WRAP);
-        shuffleParams.topMargin = dp(4);
-        control.addView(shuffle, shuffleParams);
+        shuffle.setTextSize(12);
+        shuffle.setSingleLine(true);
+        inset(shuffle, 9, 4, 9, 4);
+        btnRow.addView(shuffle, new LinearLayout.LayoutParams(WRAP, WRAP));
+        Button eyeToggle = new Button(this);
+        eyeToggle.setAllCaps(false);
+        eyeToggle.setStateListAnimator(null);
+        eyeToggle.setTypeface(MEDIUM);
+        eyeToggle.setTextSize(12);
+        eyeToggle.setSingleLine(true);
+        eyeToggle.setTextColor(GOLD);
+        eyeToggle.setMinimumHeight(dp(48));
+        inset(eyeToggle, 9, 4, 9, 4);
+        eyeToggle.setText(eyeLabel(previewEye));
+        clickable(eyeToggle, NIGHT_PANEL, null, () -> {
+            previewEye = previewEye == null ? EyePower.SPARKGLASS
+                    : previewEye == EyePower.SPARKGLASS ? EyePower.HORIZON : null;
+            eyeToggle.setText(eyeLabel(previewEye));
+            editorPortrait.setEyePower(previewEye);
+        });
+        LinearLayout.LayoutParams eyeParams = new LinearLayout.LayoutParams(WRAP, WRAP);
+        eyeParams.setMarginStart(dp(6));
+        btnRow.addView(eyeToggle, eyeParams);
+        control.addView(btnRow);
         preview.addView(control, new LinearLayout.LayoutParams(0, WRAP, 1));
         surround.addView(scene(preview));
         gap(surround, 8);
-        LinearLayout tabs = row();
-        editorTab(tabs, "Appearance", false);
-        editorTab(tabs, "Origin", true);
-        surround.addView(tabs);
+        if (wardrobeMode) {
+            surround.addView(pill("Customize any feature freely · Tap Save appearance below when done", PURPLE, LILAC));
+        } else {
+            LinearLayout tabs = row();
+            editorTab(tabs, "Appearance", false);
+            editorTab(tabs, "Origin", true);
+            surround.addView(tabs);
+        }
         return surround;
+    }
+
+    private String eyeLabel(EyePower eye) {
+        if (eye == EyePower.SPARKGLASS) return "Sparkglass";
+        if (eye == EyePower.HORIZON) return "Horizon";
+        return "Normal Eye";
     }
 
     private void editorTab(LinearLayout tabs, String title, boolean origin) {
@@ -832,7 +1234,7 @@ public final class MainActivity extends Activity {
     }
 
     private void createPage() {
-        if (editingOrigin) {
+        if (editingOrigin && !wardrobeMode) {
             originPage();
             return;
         }
@@ -847,7 +1249,8 @@ public final class MainActivity extends Activity {
         LinearLayout card = card(WHITE, 10);
         LinearLayout title = row();
         String[] options = Portrait.OPTIONS[slot];
-        TextView chosen = text(options[draft.style[slot]], 13, RED, MEDIUM);
+        int current = Math.min(draft.style[slot], options.length - 1);
+        TextView chosen = text(options[current], 13, RED, MEDIUM);
         title.addView(text(Portrait.LABELS[slot], 16, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
         title.addView(chosen);
         card.addView(title);
@@ -872,7 +1275,7 @@ public final class MainActivity extends Activity {
                 Portrait image = new Portrait(this, draft.style, 18, 0xFFE9D8CE, options[i], slot, i);
                 image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
                 appearancePreviews.add(image);
-                tile.addView(image, new LinearLayout.LayoutParams(dp(48), dp(48)));
+                tile.addView(image, new LinearLayout.LayoutParams(dp(50), dp(50)));
                 TextView label = text(options[i], 11, INK, MEDIUM);
                 label.setGravity(Gravity.CENTER);
                 label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -881,7 +1284,7 @@ public final class MainActivity extends Activity {
             tile.setBackground(selectionTile());
             tile.setContentDescription(options[i]);
             tile.setFocusable(true);
-            tile.setSelected(i == draft.style[slot]);
+            tile.setSelected(i == current);
             tile.setOnClickListener(view -> {
                 int previous = draft.style[slot];
                 if (previous == variant) return;
@@ -893,14 +1296,14 @@ public final class MainActivity extends Activity {
                 for (Portrait image : appearancePreviews) image.invalidate();
             });
             tiles[i] = tile;
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(swatches ? 48 : 75), WRAP);
-            if (i > 0) params.setMarginStart(dp(swatches ? 3 : 7));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(swatches ? 48 : 78), WRAP);
+            if (i > 0) params.setMarginStart(dp(swatches ? 4 : 7));
             rail.addView(tile, params);
         }
         scroller.addView(rail, new FrameLayout.LayoutParams(WRAP, WRAP));
         card.addView(scroller, new LinearLayout.LayoutParams(MATCH, WRAP));
         body.addView(card);
-        View initial = tiles[draft.style[slot]];
+        View initial = tiles[current];
         scroller.post(() -> scroller.scrollTo(Math.max(0, initial.getRight() - scroller.getWidth()), 0));
     }
 
@@ -940,8 +1343,14 @@ public final class MainActivity extends Activity {
         gap(body, 10);
         LinearLayout ancestry = card(WHITE, 13);
         ancestry.addView(text("Clan", 15, MUTED, MEDIUM));
-        ancestry.addView(text(Clans.ALL[draft.clan].name() + " · " + Clans.ALL[draft.clan].perkLabel(), 20, INK, DISPLAY));
-        gap(ancestry, 4);
+        LinearLayout clanLine = row();
+        addSeal(clanLine, draft.clan, 36);
+        TextView clanTitle = text(Clans.ALL[draft.clan].name() + " · " + Clans.ALL[draft.clan].perkLabel(), 18, INK, DISPLAY);
+        LinearLayout.LayoutParams clanTitleParams = new LinearLayout.LayoutParams(0, WRAP, 1);
+        clanTitleParams.setMarginStart(dp(9));
+        clanLine.addView(clanTitle, clanTitleParams);
+        ancestry.addView(clanLine);
+        gap(ancestry, 6);
         buttonIn(ancestry, "Browse clans", RED, BLUSH, () -> {
             chooseClan = true;
             filter = null;
@@ -967,12 +1376,27 @@ public final class MainActivity extends Activity {
 
     private void randomize() {
         Random random = new Random();
-        draft.name = Life.randomName(random);
-        draft.village = random.nextInt(Life.VILLAGES.length);
-        draft.clan = random.nextInt(Clans.ALL.length);
-        draft.presence = random.nextInt(Life.PRESENCE.length);
+        if (!wardrobeMode) {
+            draft.name = Life.randomName(random);
+            draft.village = random.nextInt(Life.VILLAGES.length);
+            draft.clan = random.nextInt(Clans.ALL.length);
+            draft.presence = random.nextInt(Life.PRESENCE.length);
+        }
         for (int i = 0; i < draft.style.length; i++) draft.style[i] = random.nextInt(Portrait.OPTIONS[i].length);
         render(0);
+    }
+
+    private void saveWardrobe() {
+        boolean changed = !java.util.Arrays.equals(life.style, draft.style);
+        System.arraycopy(draft.style, 0, life.style, 0, Math.min(draft.style.length, life.style.length));
+        if (changed) {
+            life.note("Wardrobe updated", "You tried on a fresh look in the mirror before heading back out.");
+        }
+        SaveGame.write(this, life);
+        draft = null;
+        wardrobeMode = false;
+        message("Appearance updated.");
+        go("life");
     }
 
     private void confirmLife() {
@@ -982,13 +1406,16 @@ public final class MainActivity extends Activity {
             return;
         }
         new AlertDialog.Builder(this).setTitle("Begin life as " + displayName(name, draft.clan) + "?")
-                .setMessage("Beginning a new life replaces the current save on this device.")
+                .setMessage("Village: " + Life.VILLAGES[draft.village]
+                        + "\nClan perk: " + Clans.ALL[draft.clan].perkLabel()
+                        + "\n\nBeginning a new life replaces the current save on this device.")
                 .setNegativeButton("Keep current life", null)
                 .setPositiveButton("Begin life", (dialog, which) -> {
                     getSystemService(InputMethodManager.class).hideSoftInputFromWindow(body.getWindowToken(), 0);
                     life = Life.begin(name, draft.clan, draft.village, draft.presence, draft.style);
                     SaveGame.write(this, life);
                     draft = null;
+                    wardrobeMode = false;
                     go("life");
                 }).show();
     }
@@ -1075,13 +1502,13 @@ public final class MainActivity extends Activity {
 
     private View progress(int value, int color) {
         View bar = new View(this) {
-            private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(android.graphics.Canvas canvas) {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas canvas) {
                 float r = getHeight() / 2f;
                 paint.setColor(BORDER);
                 canvas.drawRoundRect(0, 0, getWidth(), getHeight(), r, r, paint);
                 paint.setColor(color);
-                if (value > 0) canvas.drawRoundRect(0, 0, getWidth() * value / 100f, getHeight(), r, r, paint);
+                if (value > 0) canvas.drawRoundRect(0, 0, getWidth() * Math.min(100, value) / 100f, getHeight(), r, r, paint);
             }
         };
         bar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -1089,18 +1516,24 @@ public final class MainActivity extends Activity {
         return bar;
     }
 
-    private void quick(LinearLayout host, String label, String mark, Runnable run) {
+    private void quick(LinearLayout host, String label, String sub, String mark, Runnable run) {
         LinearLayout tile = column();
         tile.setGravity(Gravity.CENTER);
-        tile.setMinimumHeight(dp(58));
+        tile.setMinimumHeight(dp(64));
+        inset(tile, 2, 6, 2, 6);
         tile.addView(new Marks(this, mark, RED), new LinearLayout.LayoutParams(dp(19), dp(19)));
-        TextView name = text(label, 12, INK, MEDIUM);
+        TextView name = text(label, 11, INK, DISPLAY);
         name.setGravity(Gravity.CENTER);
+        name.setMaxLines(1);
         tile.addView(name);
+        TextView hint = text(sub, 10, sub.equals("Done") ? MUTED : GREEN, MEDIUM);
+        hint.setGravity(Gravity.CENTER);
+        hint.setMaxLines(1);
+        tile.addView(hint);
         clickable(tile, WHITE, BORDER, run);
-        tile.setContentDescription(label);
+        tile.setContentDescription(label + ", " + sub);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, WRAP, 1);
-        if (host.getChildCount() > 0) params.setMarginStart(dp(7));
+        if (host.getChildCount() > 0) params.setMarginStart(dp(5));
         host.addView(tile, params);
     }
 
@@ -1196,4 +1629,106 @@ public final class MainActivity extends Activity {
     private String money(int coins) { return String.format(Locale.US, "%,d", coins); }
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private void message(String label) { Toast.makeText(this, label, Toast.LENGTH_SHORT).show(); }
+
+    @android.annotation.SuppressLint("ViewConstructor")
+    private static final class TitleSceneArt extends View {
+        private static final int[] SCRIM_COLORS = {0xB8141724, 0x7A181C2A, 0xEC181C2A};
+        private static final float[] SCRIM_STOPS = {0f, 0.45f, 1f};
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path shinobi = new Path();
+        private Shader scrimShader, haloShader;
+
+        TitleSceneArt(Context context) {
+            super(context);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+
+        @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            if (w <= 0 || h <= 0) return;
+            scrimShader = new LinearGradient(0, 0, 0, h, SCRIM_COLORS, SCRIM_STOPS, Shader.TileMode.CLAMP);
+            float mx = w * 0.85f;
+            float my = h * 0.23f;
+            float mr = Math.min(w, h) * 0.145f;
+            haloShader = new RadialGradient(mx, my, mr * 2.4f, 0x55FFF1CC, 0x00FFF1CC, Shader.TileMode.CLAMP);
+        }
+
+        @Override protected void onDraw(Canvas c) {
+            int w = getWidth();
+            int h = getHeight();
+            if (w <= 0 || h <= 0) return;
+
+            // Cinematic dusk scrim so title typography pops cleanly
+            paint.setShader(scrimShader);
+            c.drawRect(0, 0, w, h, paint);
+            paint.setShader(null);
+
+            // Luminous moon + halo on upper right sky
+            float mx = w * 0.85f;
+            float my = h * 0.23f;
+            float mr = Math.min(w, h) * 0.145f;
+            paint.setShader(haloShader);
+            c.drawCircle(mx, my, mr * 2.4f, paint);
+            paint.setShader(null);
+            paint.setColor(0xEEFFF2D6);
+            c.drawCircle(mx, my, mr, paint);
+
+            // Moonlit shinobi silhouette standing on rooftop beam overlooking village
+            float sx = w * 0.78f;
+            float sy = h * 0.65f;
+            float u = Math.min(w, h) * 0.01f;
+            paint.setColor(0xFF151722);
+            shinobi.rewind();
+            // Pagoda eaves / spire tip
+            shinobi.moveTo(sx - 22 * u, sy + 19 * u);
+            shinobi.quadTo(sx - 5 * u, sy + 12 * u, sx + 22 * u, sy + 18 * u);
+            shinobi.lineTo(sx + 22 * u, sy + 25 * u);
+            shinobi.lineTo(sx - 22 * u, sy + 25 * u);
+            shinobi.close();
+            c.drawPath(shinobi, paint);
+
+            // Katana sheath diagonally behind shoulder
+            paint.setStrokeWidth(1.5f * u);
+            paint.setColor(0xFF282B3D);
+            c.drawLine(sx - 7 * u, sy - 6 * u, sx + 7 * u, sy + 9 * u, paint);
+
+            // Cloaked shinobi figure + billowing scarf
+            paint.setColor(0xFF151722);
+            shinobi.rewind();
+            shinobi.moveTo(sx - 4 * u, sy + 15 * u);
+            shinobi.lineTo(sx - 5.2f * u, sy + 4 * u);
+            shinobi.lineTo(sx - 2.6f * u, sy - 4 * u);
+            shinobi.lineTo(sx + 3.0f * u, sy - 4 * u);
+            shinobi.lineTo(sx + 5.5f * u, sy + 4 * u);
+            shinobi.lineTo(sx + 4.3f * u, sy + 15 * u);
+            shinobi.close();
+            c.drawPath(shinobi, paint);
+            // Head + spiky hair silhouette
+            c.drawCircle(sx, sy - 7.3f * u, 3.6f * u, paint);
+            shinobi.rewind();
+            shinobi.moveTo(sx - 3.5f * u, sy - 9 * u);
+            shinobi.lineTo(sx - 6.0f * u, sy - 11.5f * u);
+            shinobi.lineTo(sx - 1.5f * u, sy - 10.5f * u);
+            shinobi.lineTo(sx + 0.5f * u, sy - 12.8f * u);
+            shinobi.lineTo(sx + 2.5f * u, sy - 10.2f * u);
+            shinobi.lineTo(sx + 5.0f * u, sy - 10.5f * u);
+            shinobi.lineTo(sx + 3.2f * u, sy - 7.5f * u);
+            shinobi.close();
+            c.drawPath(shinobi, paint);
+            shinobi.rewind();
+            shinobi.moveTo(sx - 2 * u, sy - 4.3f * u);
+            shinobi.quadTo(sx - 14 * u, sy - 7 * u, sx - 24 * u, sy - 1.5f * u);
+            shinobi.quadTo(sx - 14 * u, sy - 3 * u, sx - 2 * u, sy - 2 * u);
+            shinobi.close();
+            paint.setColor(0xFF8C2537);
+            c.drawPath(shinobi, paint);
+
+            // Floating lantern embers
+            paint.setColor(0xBBFFD170);
+            c.drawCircle(w * 0.63f, h * 0.48f, 1.8f * u, paint);
+            c.drawCircle(w * 0.91f, h * 0.45f, 1.3f * u, paint);
+            c.drawCircle(w * 0.58f, h * 0.28f, 1.1f * u, paint);
+            c.drawCircle(w * 0.93f, h * 0.67f, 1.5f * u, paint);
+        }
+    }
 }
