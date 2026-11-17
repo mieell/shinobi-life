@@ -2,7 +2,7 @@
 
 An offline Android life simulator with original cartoon portraits, clan techniques, and a journal that records your choices.
 
-Open **New life** to edit your avatar, choose a village and clan, and set your starting Looks through **Presence**. New lives begin at 18 after academy graduation. The app keeps one active life on the device and asks before replacing it.
+Open **New life** to preview and pick hairstyles, colors, outfits, scars, and accessories. **Origin** lets you choose a village and clan and set starting Looks through **Presence**. New lives begin at 18 after academy graduation. The app keeps one active life on the device and asks before replacing it.
 
 - **Life** shows your resources and journal. Train, style your character, work, rest, or advance one season. Four seasons add a year.
 - **Missions** offers five assignments and a turn-based public duel. A matching clan technique adds a bonus to an assignment. Every starting path has a combat art for the duel, including fire, lightning, illusions, shadow binds, seals, regeneration, and gravity.
@@ -33,7 +33,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 On macOS or Linux, use `./gradlew` instead of `.\gradlew.bat`. The APK requires Android 7.0 or later. The release bundle at `app/build/outputs/bundle/release/app-release.aab` requires your upload key for Play Console submission.
 
-The app works offline and draws its portraits and icons directly. It refreshes the current screen content after actions and loads the journal 12 entries at a time to keep older phones responsive.
+The app works offline and draws its portraits and icons directly. Its two WebP illustrations are under 40 KB combined. It refreshes the current screen content after actions and loads the journal 12 entries at a time to keep older phones responsive.
 
 To check all 23 starting paths, the eye powers, and the summon rules with just the JDK, run this from the project directory.
 

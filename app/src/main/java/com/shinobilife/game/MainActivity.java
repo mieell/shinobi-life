@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputFilter;
@@ -19,6 +20,8 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -31,15 +34,16 @@ import static com.shinobilife.game.Clans.Role;
 import static com.shinobilife.game.Clans.Stat;
 
 public final class MainActivity extends Activity {
-    private static final int PAPER = 0xFFFBF7EF, WHITE = 0xFFFFFDF8, INK = 0xFF28232D;
-    private static final int MUTED = 0xFF695D68, RED = 0xFF933B31, BORDER = 0xFFE9DFD3;
-    private static final int BLUSH = 0xFFF6E5DF, LILAC = 0xFFEEE7F3, PURPLE = 0xFF60416F;
+    private static final int PAPER = 0xFFF3EEE8, WHITE = 0xFFFFFBF6, INK = 0xFF211D29;
+    private static final int MUTED = 0xFF5D5460, RED = 0xFF8F263B, BORDER = 0xFFE0D4C9;
+    private static final int NIGHT = 0xFF181C2A, NIGHT_PANEL = 0xFF292C3D, LIGHT_TEXT = 0xFFF4DFCE;
+    private static final int BLUSH = 0xFFF3DFDF, LILAC = 0xFFECE4F0, PURPLE = 0xFF593E6D;
     private static final int GREEN = 0xFF245B49, MINT = 0xFFE4EFE5, AMBER = 0xFF87592A;
     private static final int MATCH = -1, WRAP = -2;
     private static final int JOURNAL_BATCH = 12;
     private static final Typeface BODY = Typeface.create("sans-serif", Typeface.NORMAL);
     private static final Typeface MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL);
-    private static final Typeface DISPLAY = Typeface.create("serif", Typeface.BOLD);
+    private static final Typeface DISPLAY = Typeface.create("sans-serif", Typeface.BOLD);
     private static final String[] TABS = {"Life", "Missions", "Clans", "Summons", "People"};
     private static final String[] TAB_MARKS = {"life", "missions", "clans", "summons", "people"};
     private static final int[][] CONTACT_STYLE = {
@@ -54,8 +58,10 @@ public final class MainActivity extends Activity {
     private Role filter;
     private int selectedClan, selectedContact;
     private int journalLimit = JOURNAL_BATCH;
-    private boolean chooseClan;
+    private boolean chooseClan, editingOrigin;
     private Draft draft;
+    private Portrait editorPortrait;
+    private final java.util.ArrayList<Portrait> appearancePreviews = new java.util.ArrayList<>();
 
     private static final class Draft {
         String name = "Ren";
@@ -141,9 +147,12 @@ public final class MainActivity extends Activity {
     }
 
     private void render(int at) {
+        appearancePreviews.clear();
+        editorPortrait = null;
         FrameLayout window = new FrameLayout(this);
-        window.setBackgroundColor(PAPER);
+        window.setBackgroundColor(NIGHT);
         LinearLayout root = column();
+        root.setBackgroundColor(PAPER);
         window.addView(root, new FrameLayout.LayoutParams(MATCH, MATCH, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
@@ -154,15 +163,15 @@ public final class MainActivity extends Activity {
                 view.setPadding(Math.max(safe.left, sides), safe.top, Math.max(safe.right, sides), safe.bottom);
                 WindowInsetsController bars = view.getWindowInsetsController();
                 int light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                if (bars != null) bars.setSystemBarsAppearance(light, light);
+                if (bars != null) bars.setSystemBarsAppearance(0, light);
                 return insets;
             });
             window.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
                 if (right - left != oldRight - oldLeft) view.requestApplyInsets();
             });
         } else {
-            getWindow().setStatusBarColor(PAPER);
-            getWindow().setNavigationBarColor(INK);
+            getWindow().setStatusBarColor(NIGHT);
+            getWindow().setNavigationBarColor(NIGHT);
         }
         root.addView(header(), new LinearLayout.LayoutParams(MATCH, WRAP));
         if (page.equals("create")) root.addView(editorPreview());
@@ -213,24 +222,25 @@ public final class MainActivity extends Activity {
     private View header() {
         LinearLayout bar = row();
         inset(bar, 16, 4, 12, 4);
-        bar.setBackgroundColor(PAPER);
+        bar.setBackgroundColor(NIGHT);
         if (!isTab() || chooseClan) {
-            Button back = button("‹", RED, BLUSH, null, this::handleBack);
+            Button back = button("‹", Color.WHITE, NIGHT_PANEL, null, this::handleBack);
             back.setTextSize(26);
             back.setContentDescription("Go back");
             bar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         } else {
-            android.widget.ImageView flag = new android.widget.ImageView(this);
+            ImageView flag = new ImageView(this);
             flag.setImageResource(R.drawable.crest);
             flag.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             bar.addView(flag, new LinearLayout.LayoutParams(dp(35), dp(35)));
         }
-        TextView title = text("Shinobi Life", 23, INK, DISPLAY);
+        TextView title = text("Shinobi Life", 23, Color.WHITE, Typeface.create("sans-serif", Typeface.BOLD_ITALIC));
         LinearLayout.LayoutParams titleBox = new LinearLayout.LayoutParams(0, WRAP, 1);
         titleBox.setMarginStart(dp(9));
         bar.addView(title, titleBox);
-        if (isTab() && !chooseClan) bar.addView(button("New life", RED, BLUSH, null, () -> {
+        if (isTab() && !chooseClan) bar.addView(button("New life", Color.WHITE, RED, null, () -> {
             draft = new Draft();
+            editingOrigin = false;
             go("create");
         }));
         return bar;
@@ -238,15 +248,14 @@ public final class MainActivity extends Activity {
 
     private View dock() {
         LinearLayout layout = column();
-        layout.setBackgroundColor(WHITE);
-        line(layout);
+        layout.setBackgroundColor(NIGHT);
         LinearLayout menu = row();
         inset(menu, 8, 4, 8, 4);
         layout.addView(menu);
         for (int i = 0; i < TABS.length; i++) {
             String next = TAB_MARKS[i];
             boolean active = next.equals(page);
-            int color = active ? RED : MUTED;
+            int color = active ? Color.WHITE : LIGHT_TEXT;
             LinearLayout tab = column();
             tab.setGravity(Gravity.CENTER);
             tab.setMinimumHeight(dp(56));
@@ -255,7 +264,7 @@ public final class MainActivity extends Activity {
             TextView label = text(TABS[i], 12, color, MEDIUM);
             label.setGravity(Gravity.CENTER);
             tab.addView(label);
-            clickable(tab, active ? BLUSH : WHITE, null, () -> {
+            clickable(tab, active ? RED : NIGHT, null, () -> {
                 if (next.equals("clans")) filter = null;
                 go(next);
             });
@@ -267,26 +276,27 @@ public final class MainActivity extends Activity {
     }
 
     private void lifePage() {
+        LinearLayout hero = column();
+        inset(hero, 14, 13, 14, 14);
         LinearLayout heading = row();
-        heading.addView(text("Your life", 32, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
-        heading.addView(pill(life.date(), RED, BLUSH));
-        body.addView(heading);
-        gap(body, 12);
+        heading.addView(text("Your life", 15, LIGHT_TEXT, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
+        heading.addView(pill(life.date(), Color.WHITE, NIGHT_PANEL));
+        hero.addView(heading);
+        gap(hero, 8);
         LinearLayout card = row();
-        card.setBackground(box(LILAC, null, 22));
-        inset(card, 12, 12, 12, 12);
         EyePower eye = life.clan().eye();
-        Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFDDCEE8, "Portrait of " + life.name,
+        Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5, "Portrait of " + life.name,
                 life.eyeAwakened ? eye : null);
-        card.addView(portrait, new LinearLayout.LayoutParams(dp(80), dp(80)));
+        card.addView(portrait, new LinearLayout.LayoutParams(dp(78), dp(78)));
         LinearLayout info = column();
         inset(info, 12, 0, 0, 0);
-        info.addView(text(displayName(life.name, life.clan), 24, INK, DISPLAY));
-        info.addView(text(life.village() + " · " + life.rank(), 13, PURPLE, MEDIUM));
+        info.addView(text(displayName(life.name, life.clan), 26, Color.WHITE, DISPLAY));
+        info.addView(text(life.village() + " · " + life.rank(), 13, LIGHT_TEXT, MEDIUM));
         gap(info, 4);
-        info.addView(text(money(life.get(Stat.COINS)) + " coins · Skill " + life.get(Stat.SKILL), 13, INK, MEDIUM));
+        info.addView(text(money(life.get(Stat.COINS)) + " coins · Skill " + life.get(Stat.SKILL), 13, Color.WHITE, MEDIUM));
         card.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
-        body.addView(card);
+        hero.addView(card);
+        body.addView(scene(hero));
         gap(body, 10);
         LinearLayout meters = card(WHITE, 12);
         meters.addView(meterPair(Stat.HEALTH, GREEN, Stat.CHAKRA, PURPLE));
@@ -296,6 +306,10 @@ public final class MainActivity extends Activity {
         meters.addView(meterPair(Stat.LOOKS, RED, Stat.FAME, PURPLE));
         body.addView(meters);
         gap(body, 13);
+        if (!life.journal.isEmpty()) {
+            latestEvent(life.journal.get(0));
+            gap(body, 12);
+        }
         LinearLayout actions = row();
         quick(actions, "Train", "training", () -> {
             if (!life.train()) message("Training needs 16 stamina and room to increase Skill.");
@@ -335,10 +349,30 @@ public final class MainActivity extends Activity {
             }
             body.addView(bloodline);
         }
-        gap(body, 18);
-        body.addView(text("Life journal", 24, INK, DISPLAY));
-        gap(body, 7);
-        appendJournal(0);
+        if (life.journal.size() > 1) {
+            gap(body, 18);
+            body.addView(text("Life journal", 23, INK, DISPLAY));
+            gap(body, 8);
+            appendJournal(1);
+        }
+    }
+
+    private void latestEvent(Life.Event event) {
+        LinearLayout panel = card(WHITE, 12);
+        panel.addView(text("Latest life event", 12, RED, DISPLAY));
+        gap(panel, 6);
+        LinearLayout layout = row();
+        ImageView image = artwork(R.drawable.academy_letter);
+        image.setBackground(box(PAPER, null, 10));
+        image.setClipToOutline(true);
+        layout.addView(image, new LinearLayout.LayoutParams(dp(72), dp(76)));
+        LinearLayout detail = column();
+        inset(detail, 10, 0, 0, 0);
+        detail.addView(text(event.title(), 18, INK, DISPLAY));
+        detail.addView(text(event.detail(), 13, MUTED, BODY));
+        layout.addView(detail, new LinearLayout.LayoutParams(0, WRAP, 1));
+        panel.addView(layout);
+        body.addView(panel);
     }
 
     private void appendJournal(int from) {
@@ -622,6 +656,7 @@ public final class MainActivity extends Activity {
             buttonIn(body, "Start a life as " + clan.name(), Color.WHITE, RED, () -> {
                 draft = new Draft();
                 draft.clan = selectedClan;
+                editingOrigin = true;
                 go("create");
             });
         }
@@ -700,7 +735,11 @@ public final class MainActivity extends Activity {
             LinearLayout info = column();
             inset(info, 10, 0, 8, 0);
             info.addView(text(Life.CONTACTS[i], 21, INK, DISPLAY));
-            info.addView(text(Life.ROLES[i] + " · " + life.bonds[i] + " Trust", 13, MUTED, MEDIUM));
+            info.addView(text(Life.ROLES[i] + " · Age " + contactAge(i), 13, MUTED, MEDIUM));
+            gap(info, 5);
+            info.addView(text(life.bonds[i] + " / 100 Trust", 12, GREEN, MEDIUM));
+            gap(info, 3);
+            info.addView(progress(life.bonds[i], GREEN));
             item.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
             item.addView(text("›", 26, RED, BODY));
             clickable(item, WHITE, BORDER, () -> {
@@ -714,18 +753,29 @@ public final class MainActivity extends Activity {
 
     private Portrait contactPortrait(int contact) {
         int[] hues = {0xFFE9CDBA, 0xFFCBDED2, 0xFFDFCEE9};
-        return new Portrait(this, CONTACT_STYLE[contact], contact == 0 ? life.age() + 20 : life.age(),
+        return new Portrait(this, CONTACT_STYLE[contact], contactAge(contact),
                 hues[contact], "Portrait of " + Life.CONTACTS[contact]);
     }
 
+    private int contactAge(int contact) { return contact == 0 ? life.age() + 20 : life.age(); }
+
     private void personPage() {
         int contact = selectedContact;
-        LinearLayout intro = card(LILAC, 14);
-        intro.setGravity(Gravity.CENTER);
-        intro.addView(contactPortrait(contact), new LinearLayout.LayoutParams(dp(112), dp(112)));
-        intro.addView(text(Life.CONTACTS[contact], 29, INK, DISPLAY));
-        intro.addView(text(Life.ROLES[contact] + " · " + life.bonds[contact] + " Trust", 14, PURPLE, MEDIUM));
-        body.addView(intro);
+        LinearLayout intro = row();
+        inset(intro, 14, 13, 14, 13);
+        intro.addView(contactPortrait(contact), new LinearLayout.LayoutParams(dp(82), dp(82)));
+        LinearLayout identity = column();
+        inset(identity, 12, 0, 0, 0);
+        identity.addView(text(Life.CONTACTS[contact], 29, Color.WHITE, DISPLAY));
+        identity.addView(text(Life.ROLES[contact] + " · Age " + contactAge(contact), 14, LIGHT_TEXT, MEDIUM));
+        intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
+        body.addView(scene(intro));
+        gap(body, 9);
+        LinearLayout trust = card(WHITE, 13);
+        trust.addView(text("Trust · " + life.bonds[contact] + "/100", 16, GREEN, DISPLAY));
+        gap(trust, 6);
+        trust.addView(progress(life.bonds[contact], GREEN));
+        body.addView(trust);
         gap(body, 12);
         String[] history = {
             "Nao took you to lantern festivals when you were too small to carry your own.",
@@ -744,33 +794,125 @@ public final class MainActivity extends Activity {
 
     private View editorPreview() {
         LinearLayout surround = column();
-        inset(surround, 16, 4, 16, 0);
+        inset(surround, 16, 8, 16, 0);
         LinearLayout preview = row();
-        preview.setBackground(box(LILAC, null, 18));
-        inset(preview, 10, 8, 10, 8);
-        preview.addView(new Portrait(this, draft.style, 18, 0xFFDCCCE7, "Avatar preview"),
-                new LinearLayout.LayoutParams(dp(83), dp(83)));
+        inset(preview, 12, 10, 12, 10);
+        editorPortrait = new Portrait(this, draft.style, 18, 0xFFEBCEB5, "Avatar preview");
+        preview.addView(editorPortrait, new LinearLayout.LayoutParams(dp(86), dp(86)));
         LinearLayout control = column();
-        inset(control, 10, 0, 0, 0);
-        control.addView(text("Create your shinobi", 22, INK, DISPLAY));
-        control.addView(button("Randomize", PURPLE, LILAC, null, this::randomize));
+        inset(control, 11, 0, 0, 0);
+        control.addView(text("Create your shinobi", 21, Color.WHITE, DISPLAY));
+        Button shuffle = button("Randomize", Color.WHITE, NIGHT_PANEL, null, this::randomize);
+        LinearLayout.LayoutParams shuffleParams = new LinearLayout.LayoutParams(WRAP, WRAP);
+        shuffleParams.topMargin = dp(4);
+        control.addView(shuffle, shuffleParams);
         preview.addView(control, new LinearLayout.LayoutParams(0, WRAP, 1));
-        surround.addView(preview);
+        surround.addView(scene(preview));
+        gap(surround, 8);
+        LinearLayout tabs = row();
+        editorTab(tabs, "Appearance", false);
+        editorTab(tabs, "Origin", true);
+        surround.addView(tabs);
         return surround;
     }
 
+    private void editorTab(LinearLayout tabs, String title, boolean origin) {
+        boolean selected = editingOrigin == origin;
+        Button button = button(title, selected ? Color.WHITE : INK, selected ? RED : WHITE,
+                selected ? null : BORDER, () -> {
+                    if (editingOrigin == origin) return;
+                    getSystemService(InputMethodManager.class).hideSoftInputFromWindow(body.getWindowToken(), 0);
+                    editingOrigin = origin;
+                    render(0);
+                });
+        button.setSelected(selected);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, WRAP, 1);
+        if (origin) params.setMarginStart(dp(7));
+        tabs.addView(button, params);
+    }
+
     private void createPage() {
-        body.addView(text("Appearance", 24, INK, DISPLAY));
-        gap(body, 5);
-        LinearLayout options = card(WHITE, 12);
-        for (int i = 0; i < Portrait.LABELS.length; i++) {
-            int slot = i;
-            choice(options, Portrait.LABELS[i], Portrait.OPTIONS[i], draft.style[i], selected -> draft.style[slot] = selected);
+        if (editingOrigin) {
+            originPage();
+            return;
         }
-        body.addView(options);
-        gap(body, 12);
-        body.addView(text("Origin & presence", 24, INK, DISPLAY));
-        gap(body, 5);
+        appearancePreviews.clear();
+        for (int i = 0; i < Portrait.LABELS.length; i++) {
+            appearanceField(i);
+            gap(body, 8);
+        }
+    }
+
+    private void appearanceField(int slot) {
+        LinearLayout card = card(WHITE, 10);
+        LinearLayout title = row();
+        String[] options = Portrait.OPTIONS[slot];
+        TextView chosen = text(options[draft.style[slot]], 13, RED, MEDIUM);
+        title.addView(text(Portrait.LABELS[slot], 16, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
+        title.addView(chosen);
+        card.addView(title);
+        gap(card, 7);
+
+        boolean swatches = Portrait.isColor(slot);
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout rail = row();
+        View[] tiles = new View[options.length];
+        for (int i = 0; i < options.length; i++) {
+            int variant = i;
+            LinearLayout tile = column();
+            tile.setGravity(Gravity.CENTER);
+            tile.setMinimumHeight(dp(48));
+            inset(tile, 3, 4, 3, 4);
+            if (swatches) {
+                View color = new View(this);
+                color.setBackground(box(Portrait.optionColor(slot, variant), BORDER, 8));
+                tile.addView(color, new LinearLayout.LayoutParams(dp(29), dp(29)));
+            } else {
+                Portrait image = new Portrait(this, draft.style, 18, 0xFFE9D8CE, options[i], slot, i);
+                image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                appearancePreviews.add(image);
+                tile.addView(image, new LinearLayout.LayoutParams(dp(48), dp(48)));
+                TextView label = text(options[i], 11, INK, MEDIUM);
+                label.setGravity(Gravity.CENTER);
+                label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                tile.addView(label);
+            }
+            tile.setBackground(selectionTile());
+            tile.setContentDescription(options[i]);
+            tile.setFocusable(true);
+            tile.setSelected(i == draft.style[slot]);
+            tile.setOnClickListener(view -> {
+                int previous = draft.style[slot];
+                if (previous == variant) return;
+                draft.style[slot] = variant;
+                tiles[previous].setSelected(false);
+                tile.setSelected(true);
+                chosen.setText(options[variant]);
+                editorPortrait.invalidate();
+                for (Portrait image : appearancePreviews) image.invalidate();
+            });
+            tiles[i] = tile;
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(swatches ? 48 : 75), WRAP);
+            if (i > 0) params.setMarginStart(dp(swatches ? 3 : 7));
+            rail.addView(tile, params);
+        }
+        scroller.addView(rail, new FrameLayout.LayoutParams(WRAP, WRAP));
+        card.addView(scroller, new LinearLayout.LayoutParams(MATCH, WRAP));
+        body.addView(card);
+        View initial = tiles[draft.style[slot]];
+        scroller.post(() -> scroller.scrollTo(Math.max(0, initial.getRight() - scroller.getWidth()), 0));
+    }
+
+    private RippleDrawable selectionTile() {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_selected}, box(BLUSH, RED, 9));
+        states.addState(new int[]{android.R.attr.state_focused}, box(WHITE, RED, 9));
+        states.addState(new int[]{}, box(PAPER, BORDER, 9));
+        return new RippleDrawable(ColorStateList.valueOf(0x2C8F263B), states, box(Color.WHITE, null, 9));
+    }
+
+    private void originPage() {
         LinearLayout identity = card(WHITE, 13);
         TextView nameLabel = text("Given name", 14, MUTED, MEDIUM);
         identity.addView(nameLabel);
@@ -856,11 +998,51 @@ public final class MainActivity extends Activity {
     }
 
     private void heading(String title, String subtitle) {
-        TextView view = text(title, 32, INK, DISPLAY);
+        LinearLayout content = column();
+        inset(content, 15, 16, 15, 16);
+        content.setMinimumHeight(dp(94));
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        TextView view = text(title, 27, Color.WHITE, DISPLAY);
         if (Build.VERSION.SDK_INT >= 28) view.setAccessibilityHeading(true);
-        body.addView(view);
-        body.addView(text(subtitle, 15, MUTED, BODY));
+        content.addView(view);
+        gap(content, 3);
+        content.addView(text(subtitle, 14, LIGHT_TEXT, BODY));
+        body.addView(scene(content));
         gap(body, 13);
+    }
+
+    private FrameLayout scene(LinearLayout content) {
+        ImageView scenery = artwork(R.drawable.village_dusk);
+        View shade = new View(this);
+        FrameLayout frame = new FrameLayout(this) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                // The backdrop fills the banner without determining its height.
+                measureChild(content, widthSpec, heightSpec);
+                int width = resolveSize(content.getMeasuredWidth(), widthSpec);
+                int height = resolveSize(content.getMeasuredHeight(), heightSpec);
+                setMeasuredDimension(width, height);
+                int exactWidth = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY);
+                int exactHeight = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY);
+                scenery.measure(exactWidth, exactHeight);
+                shade.measure(exactWidth, exactHeight);
+            }
+        };
+        frame.setBackground(box(NIGHT, null, 17));
+        frame.setClipToOutline(true);
+        frame.addView(scenery, new FrameLayout.LayoutParams(MATCH, MATCH));
+        shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0xF31B1D29, 0xCE1A1D2A, 0x6E181C2A}));
+        frame.addView(shade, new FrameLayout.LayoutParams(MATCH, MATCH));
+        frame.addView(content, new FrameLayout.LayoutParams(MATCH, WRAP));
+        return frame;
+    }
+
+    private ImageView artwork(int asset) {
+        ImageView art = new ImageView(this);
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.setImageResource(asset);
+        art.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return art;
     }
 
     private void fact(String title, String detail) {
@@ -1005,12 +1187,6 @@ public final class MainActivity extends Activity {
 
     private void gap(LinearLayout target, int height) {
         target.addView(new View(this), new LinearLayout.LayoutParams(MATCH, dp(height)));
-    }
-
-    private void line(LinearLayout target) {
-        View rule = new View(this);
-        rule.setBackgroundColor(BORDER);
-        target.addView(rule, new LinearLayout.LayoutParams(MATCH, dp(1)));
     }
 
     private void inset(View view, int left, int top, int right, int bottom) {

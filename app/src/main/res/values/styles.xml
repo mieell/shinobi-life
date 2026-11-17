@@ -2,9 +2,9 @@
     <string name="app_name">Shinobi Life</string>
     <style name="GameTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#9A372E</item>
-        <item name="android:windowBackground">#FBF7EF</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#8F263B</item>
+        <item name="android:windowBackground">#181C2A</item>
+        <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

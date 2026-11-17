@@ -10,7 +10,8 @@ import android.view.View;
 @android.annotation.SuppressLint("ViewConstructor")
 final class Portrait extends View {
     static final String[][] OPTIONS = {
-        {"Silver Sweep", "Soft Crop", "Topknot", "Side Part", "Long Waves", "Round Curls"},
+        {"Silver Sweep", "Soft Crop", "Topknot", "Side Part", "Long Waves", "Round Curls",
+                "Low Ponytail", "Cropped Fade", "Side Braid", "Wild Fringe"},
         {"Ink", "Chestnut", "Silver", "Auburn", "Plum", "Honey"},
         {"Amber", "Hazel", "Slate", "Jade", "Violet", "Dark Brown"},
         {"Porcelain", "Peach", "Warm Tan", "Copper", "Umber", "Deep Brown"},
@@ -31,21 +32,46 @@ final class Portrait extends View {
     private final int age;
     private final int backdrop;
     private final EyePower eyePower;
+    private final int previewSlot, previewValue;
 
     Portrait(Context context, int[] style, int age, int backdrop, String label) {
         this(context, style, age, backdrop, label, null);
     }
 
     Portrait(Context context, int[] style, int age, int backdrop, String label, EyePower eyePower) {
+        this(context, style, age, backdrop, label, eyePower, -1, 0);
+    }
+
+    Portrait(Context context, int[] style, int age, int backdrop, String label, int previewSlot, int previewValue) {
+        this(context, style, age, backdrop, label, null, previewSlot, previewValue);
+    }
+
+    private Portrait(Context context, int[] style, int age, int backdrop, String label,
+                     EyePower eyePower, int previewSlot, int previewValue) {
         super(context);
         this.style = style;
         this.age = age;
         this.backdrop = backdrop;
         this.eyePower = eyePower;
+        this.previewSlot = previewSlot;
+        this.previewValue = previewValue;
         clip.addCircle(48, 48, 46, Path.Direction.CW);
         setContentDescription(eyePower == null ? label : label + ", " + eyePower.title + " awakened");
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
+
+    static boolean isColor(int slot) { return slot >= 1 && slot <= 3; }
+
+    static int optionColor(int slot, int variant) {
+        return switch (slot) {
+            case 1 -> HAIR[variant];
+            case 2 -> EYES[variant];
+            case 3 -> SKIN[variant];
+            default -> throw new IllegalArgumentException("No color palette for slot " + slot);
+        };
+    }
+
+    private int part(int slot) { return slot == previewSlot ? previewValue : style[slot]; }
 
     @Override protected void onDraw(Canvas canvas) {
         float scale = Math.min(getWidth(), getHeight()) / 96f;
@@ -57,19 +83,20 @@ final class Portrait extends View {
         circle(canvas, 48, 56, 33, 0x25FFFFFF);
         shape(canvas, 0x30FFFFFF, false, 7, 32, 14, 27, 18, 33, 13, 38);
         shape(canvas, 0x36FFFFFF, false, 79, 16, 84, 22, 79, 27, 74, 22);
-        int hair = age >= 65 ? HAIR[2] : HAIR[style[1]];
-        int skin = SKIN[style[3]];
-        int cloth = CLOTH[style[4]];
-        if (style[0] == 4) oval(canvas, 18, 16, 78, 82, hair, true);
-        if (style[0] == 2) oval(canvas, 49, 6, 68, 26, hair, true);
+        int hair = age >= 65 ? HAIR[2] : HAIR[part(1)];
+        int skin = SKIN[part(3)];
+        int cloth = CLOTH[part(4)];
+        if (part(0) == 4) oval(canvas, 18, 16, 78, 82, hair, true);
+        if (part(0) == 2) oval(canvas, 49, 6, 68, 26, hair, true);
+        if (part(0) == 6) oval(canvas, 62, 48, 82, 79, hair, true);
         shape(canvas, cloth, true, 9, 97, 17, 81, 38, 73, 60, 73, 79, 81, 88, 97);
         oval(canvas, 40, 60, 59, 84, skin, true);
-        shape(canvas, style[4] == 4 ? 0xFFAA4D47 : INK, false, 19, 81, 37, 74, 50, 88, 62, 75, 76, 81, 53, 96, 47, 96);
+        shape(canvas, part(4) == 4 ? 0xFFAA4D47 : INK, false, 19, 81, 37, 74, 50, 88, 62, 75, 76, 81, 53, 96, 47, 96);
         oval(canvas, 20, 43, 33, 58, skin, true);
         oval(canvas, 63, 43, 76, 58, skin, true);
         oval(canvas, 26, 22, 70, 73, skin, true);
         hair(canvas, hair);
-        int eye = EYES[style[2]];
+        int eye = EYES[part(2)];
         line(canvas, 33, 44, 40, 43, INK, 1.8f);
         line(canvas, 55, 43, 62, 44, INK, 1.8f);
         oval(canvas, 33, 47, 42, 54, Color.WHITE, false);
@@ -84,11 +111,11 @@ final class Portrait extends View {
         paint.setStyle(Paint.Style.FILL);
         oval(canvas, 29, 54, 40, 59, 0x40F15C62, false);
         oval(canvas, 56, 54, 67, 59, 0x40F15C62, false);
-        if (style[5] == 1) line(canvas, 62, 54, 57, 62, 0xFF9E4F4D, 1.6f);
-        if (style[5] == 2) line(canvas, 35, 41, 39, 46, 0xFF9E4F4D, 1.6f);
-        if (style[6] == 1) circle(canvas, 69, 56, 2.6f, 0xFFEABB59);
-        if (style[6] == 2) shape(canvas, 0xFFCF4D50, true, 67, 35, 74, 33, 76, 40, 69, 42);
-        if (style[6] == 3) {
+        if (part(5) == 1) line(canvas, 62, 54, 57, 62, 0xFF9E4F4D, 1.6f);
+        if (part(5) == 2) line(canvas, 35, 41, 39, 46, 0xFF9E4F4D, 1.6f);
+        if (part(6) == 1) circle(canvas, 69, 56, 2.6f, 0xFFEABB59);
+        if (part(6) == 2) shape(canvas, 0xFFCF4D50, true, 67, 35, 74, 33, 76, 40, 69, 42);
+        if (part(6) == 3) {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(1.5f);
             paint.setColor(INK);
@@ -120,7 +147,7 @@ final class Portrait extends View {
     }
 
     private void hair(Canvas c, int color) {
-        switch (style[0]) {
+        switch (part(0)) {
             case 1:
                 shape(c, color, true, 23, 45, 22, 29, 29, 21, 38, 15, 55, 15, 69, 24, 74, 34, 70, 45, 62, 35, 53, 36, 47, 33, 37, 36, 30, 35);
                 break;
@@ -138,9 +165,24 @@ final class Portrait extends View {
                 for (int i = 0; i < 5; i++) circle(c, 27 + i * 10, 26 - (i % 2) * 4, 10, color);
                 for (int i = 0; i < 5; i++) circle(c, 26 + i * 11, 36 + (i % 2) * 3, 7, color);
                 break;
+            case 6:
+                shape(c, color, true, 23, 45, 19, 35, 27, 23, 42, 16, 57, 16, 70, 23, 76, 35, 69, 50, 65, 38, 57, 27, 46, 29, 36, 38, 28, 38);
+                shape(c, 0xFFBC5350, false, 71, 49, 77, 47, 80, 51, 73, 54);
+                break;
+            case 7:
+                oval(c, 25, 19, 71, 51, 0x484B3A45, false);
+                shape(c, color, true, 25, 37, 26, 27, 33, 19, 44, 15, 58, 16, 68, 22, 71, 35, 63, 30, 48, 29, 34, 31);
+                break;
+            case 8:
+                shape(c, color, true, 22, 48, 19, 31, 28, 20, 43, 14, 56, 16, 69, 23, 75, 33, 71, 47, 65, 34, 54, 26, 48, 35, 36, 35, 30, 41);
+                for (int i = 0; i < 4; i++) oval(c, 66 + i, 43 + i * 7, 76 + i, 54 + i * 7, color, true);
+                break;
+            case 9:
+                shape(c, color, true, 22, 47, 17, 36, 24, 27, 19, 24, 35, 20, 35, 12, 45, 17, 60, 15, 57, 21, 73, 21, 68, 27, 77, 33, 70, 46, 63, 35, 57, 41, 53, 36, 46, 46, 42, 37, 33, 45, 31, 38);
+                break;
             default:
                 shape(c, color, true, 22, 46, 17, 33, 24, 28, 19, 25, 37, 16, 32, 11, 49, 15, 62, 12, 62, 18, 77, 24, 72, 30, 78, 38, 69, 43, 64, 31, 52, 29, 37, 43, 39, 34, 30, 40);
-                shape(c, style[1] == 2 ? 0xFFFAE1C5 : 0xFFE5DBDD, false, 45, 19, 53, 17, 47, 28, 32, 37, 40, 27);
+                shape(c, part(1) == 2 ? 0xFFFAE1C5 : 0xFFE5DBDD, false, 45, 19, 53, 17, 47, 28, 32, 37, 40, 27);
         }
     }
 
