@@ -36,11 +36,12 @@ public final class MainActivity extends Activity {
     private static final int BLUSH = 0xFFF6E5DF, LILAC = 0xFFEEE7F3, PURPLE = 0xFF60416F;
     private static final int GREEN = 0xFF245B49, MINT = 0xFFE4EFE5, AMBER = 0xFF87592A;
     private static final int MATCH = -1, WRAP = -2;
+    private static final int JOURNAL_BATCH = 12;
     private static final Typeface BODY = Typeface.create("sans-serif", Typeface.NORMAL);
     private static final Typeface MEDIUM = Typeface.create("sans-serif-medium", Typeface.NORMAL);
     private static final Typeface DISPLAY = Typeface.create("serif", Typeface.BOLD);
-    private static final String[] TABS = {"Life", "Missions", "Clans", "People"};
-    private static final String[] TAB_MARKS = {"life", "missions", "clans", "people"};
+    private static final String[] TABS = {"Life", "Missions", "Clans", "Summons", "People"};
+    private static final String[] TAB_MARKS = {"life", "missions", "clans", "summons", "people"};
     private static final int[][] CONTACT_STYLE = {
         {4, 1, 2, 1, 4, 0, 1}, {2, 3, 3, 4, 1, 0, 0}, {3, 2, 4, 3, 3, 1, 2}
     };
@@ -52,6 +53,7 @@ public final class MainActivity extends Activity {
     private LinearLayout body;
     private Role filter;
     private int selectedClan, selectedContact;
+    private int journalLimit = JOURNAL_BATCH;
     private boolean chooseClan;
     private Draft draft;
 
@@ -117,12 +119,25 @@ public final class MainActivity extends Activity {
 
     private void go(String next) {
         page = next;
+        if (next.equals("life")) journalLimit = JOURNAL_BATCH;
         render(0);
     }
 
     private void update() {
         SaveGame.write(this, life);
-        render(scroll.getScrollY());
+        refreshBody();
+    }
+
+    private void refreshBody() {
+        int at = scroll.getScrollY();
+        body.removeAllViews();
+        populateBody();
+        restoreScroll(at);
+    }
+
+    private void restoreScroll(int at) {
+        ScrollView current = scroll;
+        if (at > 0) current.post(() -> current.scrollTo(0, at));
     }
 
     private void render(int at) {
@@ -159,16 +174,7 @@ public final class MainActivity extends Activity {
         body = column();
         inset(body, 16, 14, 16, 20);
         scroll.addView(body, new ScrollView.LayoutParams(MATCH, WRAP));
-        switch (page) {
-            case "life" -> lifePage();
-            case "missions" -> missionsPage();
-            case "clans" -> clansPage();
-            case "detail" -> clanDetail();
-            case "people" -> peoplePage();
-            case "person" -> personPage();
-            case "create" -> createPage();
-            case "duel" -> duelPage();
-        }
+        populateBody();
         if (page.equals("life")) root.addView(advanceBar());
         if (page.equals("detail") && chooseClan) {
             Clans.Clan clan = Clans.ALL[selectedClan];
@@ -182,8 +188,21 @@ public final class MainActivity extends Activity {
         if (isTab() && !chooseClan) root.addView(dock());
         setContentView(window);
         window.requestApplyInsets();
-        ScrollView current = scroll;
-        if (at > 0) current.post(() -> current.scrollTo(0, at));
+        restoreScroll(at);
+    }
+
+    private void populateBody() {
+        switch (page) {
+            case "life" -> lifePage();
+            case "missions" -> missionsPage();
+            case "clans" -> clansPage();
+            case "detail" -> clanDetail();
+            case "summons" -> summonsPage();
+            case "people" -> peoplePage();
+            case "person" -> personPage();
+            case "create" -> createPage();
+            case "duel" -> duelPage();
+        }
     }
 
     private boolean isTab() {
@@ -256,7 +275,9 @@ public final class MainActivity extends Activity {
         LinearLayout card = row();
         card.setBackground(box(LILAC, null, 22));
         inset(card, 12, 12, 12, 12);
-        Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFDDCEE8, "Portrait of " + life.name);
+        EyePower eye = life.clan().eye();
+        Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFDDCEE8, "Portrait of " + life.name,
+                life.eyeAwakened ? eye : null);
         card.addView(portrait, new LinearLayout.LayoutParams(dp(80), dp(80)));
         LinearLayout info = column();
         inset(info, 12, 0, 0, 0);
@@ -300,10 +321,36 @@ public final class MainActivity extends Activity {
             else update();
         });
         body.addView(actions);
+        if (eye != null) {
+            gap(body, 10);
+            LinearLayout bloodline = card(LILAC, 12);
+            bloodline.addView(text(eye.title, 19, INK, DISPLAY));
+            bloodline.addView(text(life.eyeAwakened ? "Awakened · " + eye.move
+                    : "Awakens at " + eye.requirement(), 14, PURPLE, MEDIUM));
+            if (life.canAwakenEye()) {
+                gap(bloodline, 5);
+                buttonIn(bloodline, "Awaken " + eye.title, PURPLE, WHITE, () -> {
+                    if (life.awakenEye()) update();
+                });
+            }
+            body.addView(bloodline);
+        }
         gap(body, 18);
         body.addView(text("Life journal", 24, INK, DISPLAY));
         gap(body, 7);
-        for (Life.Event event : life.journal) journal(event);
+        appendJournal(0);
+    }
+
+    private void appendJournal(int from) {
+        int end = Math.min(journalLimit, life.journal.size());
+        for (int i = from; i < end; i++) journal(life.journal.get(i));
+        if (end < life.journal.size()) {
+            buttonIn(body, "Show older entries", RED, BLUSH, () -> {
+                body.removeViewAt(body.getChildCount() - 1);
+                journalLimit += JOURNAL_BATCH;
+                appendJournal(end);
+            });
+        }
     }
 
     private void journal(Life.Event event) {
@@ -324,8 +371,9 @@ public final class MainActivity extends Activity {
     private View advanceBar() {
         return footerButton("Advance season  ›", () -> {
             life.advance();
-            SaveGame.write(this, life);
-            go("life");
+            journalLimit = JOURNAL_BATCH;
+            scroll.scrollTo(0, 0);
+            update();
         });
     }
 
@@ -351,6 +399,15 @@ public final class MainActivity extends Activity {
                     buttonIn(card, "Use " + clan.technique() + " · " + clan.costLabel(),
                             PURPLE, LILAC, () -> take(mission, true));
                 }
+                for (Summon summon : Summon.ALL) {
+                    if (summon.mission != mission || !life.hasSummon(summon)) continue;
+                    gap(card, 5);
+                    card.addView(text("+" + summon.bonusAmount + " " + summon.bonus.label, 13, GREEN, MEDIUM));
+                    if (life.canSummonOnMission(summon, mission)) {
+                        buttonIn(card, "Call " + summon.title + " · " + Summon.MISSION_CHAKRA + " chakra",
+                                GREEN, MINT, () -> take(mission, false, summon));
+                    } else card.addView(pill(summon.title + " needs " + Summon.MISSION_CHAKRA + " chakra", MUTED, PAPER));
+                }
             }
             body.addView(card);
             gap(body, 9);
@@ -358,7 +415,11 @@ public final class MainActivity extends Activity {
     }
 
     private void take(Missions mission, boolean technique) {
-        if (!life.take(mission, technique)) {
+        take(mission, technique, null);
+    }
+
+    private void take(Missions mission, boolean technique, Summon summon) {
+        if (!life.take(mission, technique, summon)) {
             message("This assignment or technique is unavailable.");
             return;
         }
@@ -366,23 +427,29 @@ public final class MainActivity extends Activity {
         if (mission == Missions.DUEL) go("duel");
         else {
             message("Assignment finished. Recorded in your journal.");
-            render(scroll.getScrollY());
+            refreshBody();
         }
     }
 
     private void duelPage() {
         heading("Cedar Pass", "Public duel · Ibara Kase");
+        EyePower eye = life.clan().eye();
         LinearLayout arena = row();
-        arena.addView(fighter(life.name, life.style, life.age(), LILAC, life.get(Stat.HEALTH), 100), new LinearLayout.LayoutParams(0, WRAP, 1));
+        arena.addView(fighter(life.name, life.style, life.age(), LILAC, life.get(Stat.HEALTH), 100,
+                life.eyeAwakened ? eye : null), new LinearLayout.LayoutParams(0, WRAP, 1));
         TextView vs = text("VS", 16, RED, DISPLAY);
         inset(vs, 8, 0, 8, 0);
         arena.addView(vs);
-        arena.addView(fighter("Ibara", RIVAL_STYLE, 27, BLUSH, life.enemyHp, 72), new LinearLayout.LayoutParams(0, WRAP, 1));
+        arena.addView(fighter("Ibara", RIVAL_STYLE, 27, BLUSH, life.enemyHp, 72, null), new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(arena);
         gap(body, 12);
         LinearLayout log = card(MINT, 15);
         log.addView(text(life.enemyHp > 0 ? "Round " + life.round + " · " + life.get(Stat.CHAKRA) + " chakra" : "Match ended", 14, GREEN, MEDIUM));
         log.addView(text(life.duelLog, 16, INK, BODY));
+        if (life.enemyHp > 0 && life.eyeAwakened && eye == EyePower.SPARKGLASS) {
+            log.addView(text("Sparkglass reads " + (life.incomingDamage() == 18 ? "Cedar Breaker" : "Stone Jab")
+                    + " next · " + life.incomingDamage() + " base damage", 14, PURPLE, MEDIUM));
+        }
         log.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         body.addView(log);
         gap(body, 12);
@@ -390,19 +457,41 @@ public final class MainActivity extends Activity {
             buttonIn(body, "Return to mission board", Color.WHITE, RED, () -> go("missions"));
             return;
         }
-        duelButton("Strike · " + (12 + life.get(Stat.SKILL) / 6) + " damage", Life.Move.STRIKE, Color.WHITE, RED);
+        duelButton("Strike · " + life.strikeDamage() + " damage", Life.Move.STRIKE, Color.WHITE, RED);
         duelButton("Guard · Recover 8 chakra", Life.Move.GUARD, GREEN, MINT);
-        if (life.matches(Missions.DUEL)) {
-            Clans.Clan clan = life.clan();
-            duelButton(clan.technique() + " · " + clan.amount() + " damage · " + clan.costLabel(), Life.Move.TECHNIQUE, PURPLE, LILAC);
+        CombatArt art = CombatArt.forClan(life.clan());
+        duelArt(art.name(), art.description(), life.artDuelBlocker(art), Life.Move.TECHNIQUE);
+        if (eye != null && life.eyeAwakened) {
+            String blocker = life.eyeDuelBlocker();
+            String detail = blocker.isEmpty() ? eye.damage(life.observedMove) + " damage · " + eye.chakra + " chakra · Stops the counter"
+                    : eye.title;
+            duelArt(eye.move, detail, blocker, Life.Move.EYE);
+        }
+        java.util.ArrayList<Summon> available = new java.util.ArrayList<>();
+        boolean hasPact = false;
+        for (Summon summon : Summon.ALL) {
+            if (!life.hasSummon(summon)) continue;
+            hasPact = true;
+            if (!life.usedInDuel(summon)) available.add(summon);
+        }
+        if (hasPact) {
+            String remaining = life.duelSummonCount() + "/" + Summon.MAX_DUEL_CALLS + " calls used";
+            if (life.duelSummonCount() >= Summon.MAX_DUEL_CALLS || available.isEmpty()) {
+                body.addView(pill("Summons · " + remaining + " · No further calls", MUTED, PAPER));
+            } else if (life.get(Stat.CHAKRA) < Summon.DUEL_CHAKRA) {
+                body.addView(pill("Summons need " + Summon.DUEL_CHAKRA + " chakra", MUTED, PAPER));
+            } else {
+                buttonIn(body, "Call a summon · " + remaining, GREEN, MINT, () -> chooseDuelSummon(available));
+            }
+            gap(body, 7);
         }
         buttonIn(body, "Concede match", MUTED, WHITE, this::handleBack);
     }
 
-    private LinearLayout fighter(String name, int[] style, int age, int color, int hp, int max) {
+    private LinearLayout fighter(String name, int[] style, int age, int color, int hp, int max, EyePower eye) {
         LinearLayout card = card(color, 10);
         card.setGravity(Gravity.CENTER);
-        card.addView(new Portrait(this, style, age, color == LILAC ? 0xFFD9C7E9 : 0xFFE7C3B0, name),
+        card.addView(new Portrait(this, style, age, color == LILAC ? 0xFFD9C7E9 : 0xFFE7C3B0, name, eye),
                 new LinearLayout.LayoutParams(dp(75), dp(75)));
         TextView label = text(name, 19, INK, DISPLAY);
         label.setGravity(Gravity.CENTER);
@@ -415,33 +504,57 @@ public final class MainActivity extends Activity {
 
     private void duelButton(String label, Life.Move move, int color, int fill) {
         buttonIn(body, label, color, fill, () -> {
-            if (!life.duel(move)) message("You need more chakra.");
+            if (!life.duel(move)) message("This move is unavailable.");
             else update();
         });
         gap(body, 7);
     }
 
+    private void duelArt(String title, String detail, String blocker, Life.Move move) {
+        body.addView(text(detail, 13, PURPLE, MEDIUM));
+        if (blocker.isEmpty()) duelButton(title, move, PURPLE, LILAC);
+        else {
+            body.addView(pill(title + " · " + blocker, MUTED, PAPER));
+            gap(body, 7);
+        }
+    }
+
+    private void chooseDuelSummon(java.util.List<Summon> summons) {
+        String[] labels = new String[summons.size()];
+        for (int i = 0; i < labels.length; i++) {
+            Summon summon = summons.get(i);
+            labels[i] = summon.title + " · " + summon.damageAt(life.summonBond(summon)) + " damage\n" + summon.duelEffect;
+        }
+        new AlertDialog.Builder(this).setTitle("Call a summon · " + Summon.DUEL_CHAKRA + " chakra")
+                .setItems(labels, (dialog, which) -> {
+                    if (life.callInDuel(summons.get(which))) update();
+                    else message("This summon is unavailable.");
+                }).setNegativeButton("Cancel", null).show();
+    }
+
     private void clansPage() {
         heading(chooseClan ? "Choose a clan" : "Clan codex",
-                "A clan is your family and fighting tradition. It gives you a starting perk and a technique for certain missions.");
+                "Your clan shapes your starting perk, jutsu, and specialty. Two lineages can awaken inherited eye powers.");
         if (!chooseClan) {
             LinearLayout current = card(LILAC, 13);
             current.addView(text("YOUR LINEAGE", 11, PURPLE, MEDIUM));
             current.addView(text(life.clan().name(), 24, INK, DISPLAY));
-            current.addView(text(life.clan().role().label + " · " + life.clan().technique(), 14, PURPLE, MEDIUM));
+            current.addView(text(life.clan().role().label + " · " + CombatArt.forClan(life.clan()).name(), 14, PURPLE, MEDIUM));
             clickable(current, LILAC, null, () -> detail(life.clan));
             body.addView(current);
             gap(body, 10);
         }
         LinearLayout filterRow = row();
-        filterRow.addView(text((filter == null ? "20 clans + Clanless" : filter.label), 16, INK, MEDIUM),
+        filterRow.addView(text((filter == null ? (Clans.ALL.length - 1) + " clans + Clanless" : filter.label), 16, INK, MEDIUM),
                 new LinearLayout.LayoutParams(0, WRAP, 1));
         filterRow.addView(button("Filter", RED, BLUSH, null, this::filterClans));
         body.addView(filterRow);
         gap(body, 7);
-        for (int i = 0; i < Clans.ALL.length; i++) {
-            Clans.Clan clan = Clans.ALL[i];
-            if (filter == null || clan.role() == filter) clanRow(i);
+        for (boolean showBloodlines : new boolean[]{true, false}) {
+            for (int i = 0; i < Clans.ALL.length; i++) {
+                Clans.Clan clan = Clans.ALL[i];
+                if ((clan.eye() != null) == showBloodlines && (filter == null || clan.role() == filter)) clanRow(i);
+            }
         }
     }
 
@@ -466,7 +579,8 @@ public final class MainActivity extends Activity {
         LinearLayout info = column();
         inset(info, 10, 0, 8, 0);
         info.addView(text(clan.name(), 20, INK, DISPLAY));
-        info.addView(text(clan.role().label + " · " + clan.perkLabel(), 13, MUTED, MEDIUM));
+        String specialty = clan.eye() == null ? CombatArt.forClan(clan).school() : clan.eye().title;
+        info.addView(text(specialty + " · " + clan.perkLabel(), 13, MUTED, MEDIUM));
         item.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
         item.addView(text("›", 26, RED, BODY));
         clickable(item, WHITE, BORDER, () -> detail(index));
@@ -492,14 +606,17 @@ public final class MainActivity extends Activity {
         banner.addView(title, new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(banner);
         gap(body, 10);
-        fact("Starting perk", clan.perkLabel() + " at the start of a new life.");
-        if (clan.role() == Role.OPEN) {
-            fact("How you play", clan.knack());
-        } else {
-            fact("Signature technique · " + clan.technique(), clan.action() + " " + clan.effect());
-            fact("When you can use it", clan.limit());
-            fact("Family tradition", clan.knack());
+        EyePower eye = clan.eye();
+        if (eye != null) {
+            fact(eye.title, "Awaken with " + eye.requirement() + ". " + eye.description());
         }
+        CombatArt art = CombatArt.forClan(clan);
+        fact("Combat jutsu · " + art.name(), art.description() + " Use it in the Cedar Pass duel.");
+        fact("Starting perk", clan.perkLabel() + " at the start of a new life.");
+        if (clan.role() != Role.OPEN && clan.role() != Role.DUELIST) {
+            fact("Mission technique · " + clan.technique(), clan.action() + " " + clan.effect() + " " + clan.limit());
+        }
+        fact("Family tradition", clan.knack());
         fact("Origins", clan.origin());
         if (!chooseClan && selectedClan != life.clan) {
             buttonIn(body, "Start a life as " + clan.name(), Color.WHITE, RED, () -> {
@@ -517,6 +634,60 @@ public final class MainActivity extends Activity {
         seal.addView(new Marks(this, Integer.toString(index), 0xFFFFE8BE),
                 new FrameLayout.LayoutParams(dp(size * 5 / 8), dp(size * 5 / 8), Gravity.CENTER));
         host.addView(seal, new LinearLayout.LayoutParams(dp(size), dp(size)));
+    }
+
+    private void summonsPage() {
+        int owned = 0;
+        for (Summon summon : Summon.ALL) if (life.hasSummon(summon)) owned++;
+        heading("Summon contracts", owned + " of " + Summon.ALL.length
+                + " companions. Call one on a matching assignment or up to two different companions in a duel.");
+        for (Summon summon : Summon.ALL) {
+            LinearLayout card = card(WHITE, 13);
+            LinearLayout identity = row();
+            FrameLayout badge = new FrameLayout(this);
+            badge.setBackground(box(summon.color, null, 15));
+            badge.addView(new Marks(this, summon.name(), 0xFFFFE8BE),
+                    new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER));
+            identity.addView(badge, new LinearLayout.LayoutParams(dp(50), dp(50)));
+            LinearLayout name = column();
+            inset(name, 10, 0, 0, 0);
+            name.addView(text(summon.title, 20, INK, DISPLAY));
+            boolean signed = life.hasSummon(summon);
+            name.addView(text(signed ? "Contract signed · " + life.summonBond(summon) + " Bond"
+                    : "Pact fee · " + summon.price + " coins", 13, signed ? GREEN : MUTED, MEDIUM));
+            identity.addView(name, new LinearLayout.LayoutParams(0, WRAP, 1));
+            card.addView(identity);
+            gap(card, 8);
+            card.addView(text("Mission · +" + summon.bonusAmount + " " + summon.bonus.label + " on the "
+                    + summon.mission.shortName + " for " + Summon.MISSION_CHAKRA + " chakra.", 14, MUTED, BODY));
+            int damage = summon.damageAt(life.summonBond(summon));
+            card.addView(text("Duel · " + damage + " damage for " + Summon.DUEL_CHAKRA + " chakra. "
+                    + summon.duelEffect, 14, MUTED, BODY));
+            gap(card, 8);
+            if (signed) {
+                int bond = life.summonBond(summon);
+                card.addView(progress(bond, GREEN));
+                gap(card, 5);
+                card.addView(text(bond >= 90 ? "Maximum duel damage bonus" : "Duel damage increases at 50 and 90 Bond",
+                        13, GREEN, MEDIUM));
+                if (bond < 100 && !life.bondedThisSeason(summon)) {
+                    gap(card, 5);
+                    buttonIn(card, "Train together · " + Summon.BOND_STAMINA + " stamina", GREEN, MINT, () -> {
+                        if (life.bondSummon(summon)) update();
+                        else message("You need " + Summon.BOND_STAMINA + " stamina.");
+                    });
+                } else card.addView(pill(bond == 100 ? "Maximum bond" : "Trained this season", GREEN, MINT));
+            } else if (life.knowsSummon(summon)) {
+                buttonIn(card, "Sign contract · " + summon.price + " coins", RED, BLUSH, () -> {
+                    if (life.signSummon(summon)) update();
+                    else message("You need " + summon.price + " coins.");
+                });
+            } else {
+                card.addView(pill("Unlock by completing " + summon.mission.title, MUTED, PAPER));
+            }
+            body.addView(card);
+            gap(body, 9);
+        }
     }
 
     private void peoplePage() {

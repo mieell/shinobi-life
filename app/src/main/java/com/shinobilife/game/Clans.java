@@ -30,6 +30,14 @@ final class Clans {
             if (role == Role.DUELIST) return "Usable only in the Cedar Pass duel. Costs " + costLabel() + " per use.";
             return "Usable once per assignment on the " + Missions.forRole(role).shortName + " mission. Costs " + costLabel() + ".";
         }
+
+        EyePower eye() {
+            return switch (name) {
+                case "Kagaribi" -> EyePower.SPARKGLASS;
+                case "Shinkai" -> EyePower.HORIZON;
+                default -> null;
+            };
+        }
     }
 
     static final Clan[] ALL = {
@@ -53,7 +61,10 @@ final class Clans {
         new Clan("Tsugihara", Role.CRAFTER, 0xFF8C634B, "Scrap traders turned old battlefield gear into tools that families could afford.", "Some descendants sense tiny flaws in metal by feeling its vibration.", Stat.SKILL, 6, "Singing Rivet", "Locate stressed rivets by touch and reinforce the depot gear.", 15, Stat.FAME, 11),
         new Clan("Kasamori", Role.MEDIC, 0xFF49724A, "Kasamori keepers carried medicine between rain shelters during the Three Floods.", "They memorize treatment routines and train to keep a steady hand on the move.", Stat.HEALTH, 10, "Shelter Rounds", "Organize the clinic's treatment rounds and make time for your own care.", 0, Stat.HEALTH, 10),
         new Clan("Kazetobi", Role.DUELIST, 0xFF376D6D, "High ridge couriers built Kazetobi's school beside their old signal flags.", "Their inherited pressure sense lets them feel the air shift before a nearby movement.", Stat.STAMINA, 10, "Flagline Step", "Duck inside the opponent's reach and strike from an unexpected angle.", 12, Stat.HEALTH, 21),
-        new Clan("Clanless", Role.OPEN, 0xFF73645D, "Independent shinobi come from all kinds of households and study at the public academy.", "Without a clan specialty, you start with stronger fundamentals and use the standard route in every mission.", Stat.SKILL, 9, "Academy Fundamentals", "Practice practical skills with the public academy.", 0, Stat.SKILL, 0)
+        new Clan("Clanless", Role.OPEN, 0xFF73645D, "Independent shinobi come from all kinds of households and study at the public academy.", "Without a clan specialty, you start with stronger fundamentals and use the standard route in every mission.", Stat.SKILL, 9, "Academy Fundamentals", "Practice practical skills with the public academy.", 0, Stat.SKILL, 0),
+        // Save files store clan indices, so new clans go at the end.
+        new Clan("Kagaribi", Role.DUELIST, 0xFF9D3C35, "Kagaribi lanternwrights kept the night watch when the academy still trained on the rooftops.", "Their Sparkglass Eye learns the rhythm of a move by watching it once. Their fire art throws smoldering glass dust that catches a foe after the first strike.", Stat.SKILL, 6, "Coalglass Flare", "Kindle smoldering glass dust.", 14, Stat.HEALTH, 18),
+        new Clan("Shinkai", Role.DUELIST, 0xFF4F4980, "The Shinkai grew up along a bay where floating stones sometimes drop into the sea without warning.", "They learn to shift the weight of objects through touch. The rare Horizon Eye lets a proven duelist pull a rival to the ground from a distance.", Stat.CHAKRA, 18, "Tideweight Palm", "Shift the weight of the air around your rival.", 17, Stat.HEALTH, 22)
     };
 
     private Clans() {}

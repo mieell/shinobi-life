@@ -22,11 +22,15 @@ final class Life {
     final EnumMap<Stat, Integer> stats = new EnumMap<>(Stat.class);
     final int[] bonds = {64, 52, 32};
     final int[] style = {0, 0, 1, 2, 0, 0, 0};
+    final int[] summonBonds = new int[Summon.ALL.length];
 
     String name;
     int clan, village, presence, season, completed, interacted, victories;
     boolean styled, worked, rested;
+    int scoutedMissions, bondedSummons, duelSummons;
     int enemyHp, round;
+    int burnTurns, observedMove;
+    boolean bindUsed, eyeAwakened, eyeUsed;
     String duelLog = "";
     int startAge = 18;
 
@@ -46,6 +50,7 @@ final class Life {
         life.stats.put(Stat.COINS, 180);
         life.stats.put(Stat.SKILL, 10);
         life.add(life.clan().perk(), life.clan().start());
+        life.grantStartingSummon();
         life.note("A life of your own", "You graduated from the " + life.village() + " academy. The mission board and the village are open to you.");
         return life;
     }
@@ -73,7 +78,7 @@ final class Life {
 
     void advance() {
         season++;
-        completed = interacted = 0;
+        completed = interacted = bondedSummons = 0;
         styled = worked = rested = false;
         add(Stat.STAMINA, 45);
         add(Stat.CHAKRA, 48);
@@ -150,15 +155,23 @@ final class Life {
     boolean matches(Missions mission) { return clan().role() == mission.role; }
 
     boolean take(Missions mission, boolean technique) {
+        return take(mission, technique, null);
+    }
+
+    boolean take(Missions mission, boolean technique, Summon summon) {
         if (!canStart(mission) || (technique && (mission == Missions.DUEL
                 || !matches(mission) || get(Stat.CHAKRA) < clan().cost()))) return false;
+        if (summon != null && (technique || !canSummonOnMission(summon, mission))) return false;
         completed |= mission.mask();
         add(Stat.STAMINA, -mission.stamina);
         if (mission == Missions.DUEL) {
             enemyHp = 72;
             round = 1;
+            burnTurns = observedMove = duelSummons = 0;
+            bindUsed = eyeUsed = false;
             duelLog = "Ibara bows. The referee calls the first round.";
         } else {
+            scoutedMissions |= mission.mask();
             String detail = "+" + mission.coins + " Coins · +" + mission.fame + " Fame";
             add(Stat.COINS, mission.coins);
             add(Stat.FAME, mission.fame);
@@ -167,12 +180,81 @@ final class Life {
                 add(clan().bonus(), clan().amount());
                 detail = clan().action() + " " + detail + " · +" + clan().amount() + " " + clan().bonus().label;
             }
+            if (summon != null) {
+                add(Stat.CHAKRA, -Summon.MISSION_CHAKRA);
+                add(summon.bonus, summon.bonusAmount);
+                detail = summon.title + " answered your call. " + detail
+                        + " · +" + summon.bonusAmount + " " + summon.bonus.label;
+            }
             note(mission.title, detail);
         }
         return true;
     }
 
-    enum Move { STRIKE, GUARD, TECHNIQUE, RETREAT }
+    void grantStartingSummon() {
+        if (clan().name().equals("Toriba")) summonBonds[Summon.SHRIKE.ordinal()] = Summon.STARTING_BOND;
+    }
+
+    boolean hasSummon(Summon summon) { return summonBond(summon) > 0; }
+    int summonBond(Summon summon) { return summonBonds[summon.ordinal()]; }
+    boolean knowsSummon(Summon summon) { return (scoutedMissions & summon.mission.mask()) != 0; }
+    boolean bondedThisSeason(Summon summon) { return (bondedSummons & summon.mask()) != 0; }
+
+    boolean signSummon(Summon summon) {
+        if (enemyHp > 0 || hasSummon(summon) || !knowsSummon(summon) || get(Stat.COINS) < summon.price) return false;
+        add(Stat.COINS, -summon.price);
+        summonBonds[summon.ordinal()] = Summon.STARTING_BOND;
+        note("A pact with " + summon.title, "You signed a summon contract after helping with the "
+                + summon.mission.shortName + ". " + summon.title + " can now join you in missions and duels.");
+        return true;
+    }
+
+    boolean bondSummon(Summon summon) {
+        if (enemyHp > 0 || !hasSummon(summon) || bondedThisSeason(summon) || summonBond(summon) == 100
+                || get(Stat.STAMINA) < Summon.BOND_STAMINA) return false;
+        bondedSummons |= summon.mask();
+        int gain = Math.min(20, 100 - summonBond(summon));
+        summonBonds[summon.ordinal()] += gain;
+        add(Stat.STAMINA, -Summon.BOND_STAMINA);
+        note("Time with " + summon.title, "You trained together at the shrine. +" + gain + " Bond.");
+        return true;
+    }
+
+    boolean canSummonOnMission(Summon summon, Missions mission) {
+        return summon.mission == mission && hasSummon(summon) && get(Stat.CHAKRA) >= Summon.MISSION_CHAKRA;
+    }
+
+    boolean canAwakenEye() {
+        EyePower eye = clan().eye();
+        return eye != null && !eyeAwakened && enemyHp == 0 && get(Stat.SKILL) >= eye.skill && victories >= eye.wins;
+    }
+
+    boolean awakenEye() {
+        if (!canAwakenEye()) return false;
+        eyeAwakened = true;
+        EyePower eye = clan().eye();
+        note(eye.title + " awakened", "You can now use " + eye.move + " at Cedar Pass. " + eye.description());
+        return true;
+    }
+
+    String eyeDuelBlocker() {
+        EyePower eye = clan().eye();
+        if (!eyeAwakened || eye == null) return "Awaken the bloodline first";
+        if (eyeUsed) return "Already used this duel";
+        if (get(Stat.CHAKRA) < eye.chakra) return "Low chakra";
+        return eye.condition(observedMove);
+    }
+
+    enum Move { STRIKE, GUARD, TECHNIQUE, EYE, RETREAT }
+    private enum Counter { FULL, HALF, GUARD, STOP }
+
+    int strikeDamage() { return 12 + get(Stat.SKILL) / 6; }
+    int incomingDamage() { return round % 3 == 0 ? 18 : 10; }
+
+    String artDuelBlocker(CombatArt art) {
+        if (art.effect() == CombatArt.Effect.BIND && bindUsed) return "Already used this duel";
+        return get(Stat.CHAKRA) < art.chakra() ? "Low chakra" : "";
+    }
 
     boolean duel(Move move) {
         if (enemyHp <= 0) return false;
@@ -182,35 +264,98 @@ final class Life {
             note("Retreated at Cedar Pass", duelLog);
             return true;
         }
-        int damage = 0;
-        String action;
-        switch (move) {
-            case TECHNIQUE:
-                if (!matches(Missions.DUEL) || get(Stat.CHAKRA) < clan().cost()) return false;
-                damage = clan().amount();
-                add(Stat.CHAKRA, -clan().cost());
-                action = "You used " + clan().technique();
-                break;
-            case GUARD:
+        return switch (move) {
+            case TECHNIQUE -> castArt();
+            case EYE -> {
+                if (!eyeDuelBlocker().isEmpty()) yield false;
+                EyePower eye = clan().eye();
+                eyeUsed = true;
+                add(Stat.CHAKRA, -eye.chakra);
+                String action = "You used " + eye.move;
+                if (eye == EyePower.SPARKGLASS) action += " and copied " + (observedMove == 18 ? "Cedar Breaker" : "Stone Jab");
+                yield resolveRound(action, eye.damage(observedMove), Counter.STOP);
+            }
+            case GUARD -> {
                 add(Stat.CHAKRA, 8);
-                action = "You guarded and recovered 8 chakra";
-                break;
-            default:
-                damage = 12 + get(Stat.SKILL) / 6;
-                action = "You struck";
+                yield resolveRound("You guarded and recovered 8 chakra", 0, Counter.GUARD);
+            }
+            case STRIKE -> resolveRound("You struck", strikeDamage(), Counter.FULL);
+            case RETREAT -> throw new AssertionError("Retreat was already handled");
+        };
+    }
+
+    private boolean castArt() {
+        CombatArt art = CombatArt.forClan(clan());
+        if (!artDuelBlocker(art).isEmpty()) return false;
+        add(Stat.CHAKRA, -art.chakra());
+        String action = "You used " + art.name();
+        switch (art.effect()) {
+            case BURN -> burnTurns = 2;
+            case BIND -> bindUsed = true;
+            case HEAL -> {
+                add(Stat.HEALTH, 14);
+                action += " and restored health";
+            }
+            case REFILL -> {
+                add(Stat.CHAKRA, 8);
+                action += " and drew chakra from the seal";
+            }
+            default -> { }
+        }
+        Counter counter = switch (art.effect()) {
+            case BIND -> Counter.STOP;
+            case WARD -> Counter.HALF;
+            default -> Counter.FULL;
+        };
+        return resolveRound(action, art.damage(), counter);
+    }
+
+    int duelSummonCount() { return Integer.bitCount(duelSummons); }
+    boolean usedInDuel(Summon summon) { return (duelSummons & summon.mask()) != 0; }
+
+    boolean callInDuel(Summon summon) {
+        if (enemyHp <= 0 || !hasSummon(summon) || usedInDuel(summon) || duelSummonCount() >= Summon.MAX_DUEL_CALLS
+                || get(Stat.CHAKRA) < Summon.DUEL_CHAKRA) return false;
+        duelSummons |= summon.mask();
+        add(Stat.CHAKRA, -Summon.DUEL_CHAKRA);
+        if (summon == Summon.OTTER) add(Stat.HEALTH, 12);
+        Counter counter = switch (summon) {
+            case TORTOISE -> Counter.STOP;
+            case MOTH -> Counter.HALF;
+            default -> Counter.FULL;
+        };
+        return resolveRound("You called " + summon.title + ". " + summon.duelEffect,
+                summon.damageAt(summonBond(summon)), counter);
+    }
+
+    private boolean resolveRound(String action, int damage, Counter defense) {
+        String recap = action + (action.endsWith(".") ? "" : ".");
+        if (damage > 0) recap += " " + damage + " damage.";
+        if (burnTurns > 0) {
+            burnTurns--;
+            damage += 5;
+            recap += " Burn dealt 5 damage.";
         }
         enemyHp = Math.max(0, enemyHp - damage);
         if (enemyHp == 0) {
             victories++;
             add(Stat.COINS, Missions.DUEL.coins);
             add(Stat.FAME, Missions.DUEL.fame);
-            duelLog = action + " and won. +" + Missions.DUEL.coins + " Coins · +" + Missions.DUEL.fame + " Fame.";
+            duelLog = recap + " You won. +" + Missions.DUEL.coins + " Coins · +" + Missions.DUEL.fame + " Fame.";
             note("Won at Cedar Pass", duelLog);
             return true;
         }
-        int counter = move == Move.GUARD ? 3 : (round % 3 == 0 ? 18 : 10);
+        int attack = incomingDamage();
+        int counter = switch (defense) {
+            case FULL -> attack;
+            case HALF -> attack / 2;
+            case GUARD -> 3;
+            case STOP -> 0;
+        };
+        if (counter > 0) observedMove = attack;
         add(Stat.HEALTH, -counter);
-        duelLog = action + (damage > 0 ? " for " + damage + " damage." : ".") + " Ibara dealt " + counter + " damage.";
+        duelLog = recap + (counter == 0 ? " Ibara’s counter was stopped."
+                : " Ibara used " + (attack == 18 ? "Cedar Breaker" : "Stone Jab") + " for " + counter + " damage.");
         round++;
         if (get(Stat.HEALTH) == 0) {
             enemyHp = 0;

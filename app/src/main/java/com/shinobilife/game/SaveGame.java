@@ -30,6 +30,21 @@ final class SaveGame {
             life.enemyHp = bounded(json.optInt("enemyHp"), 72);
             life.round = Math.max(0, json.optInt("round"));
             life.duelLog = json.optString("duelLog");
+            life.burnTurns = bounded(json.optInt("burnTurns"), 2);
+            life.observedMove = json.optInt("observedMove");
+            if (life.observedMove != 10 && life.observedMove != 18) life.observedMove = 0;
+            life.bindUsed = json.optBoolean("bindUsed");
+            life.eyeAwakened = life.clan().eye() != null && json.optBoolean("eyeAwakened");
+            life.eyeUsed = json.optBoolean("eyeUsed");
+            life.scoutedMissions = json.optInt("scoutedMissions", life.completed);
+            int summonMask = (1 << Summon.ALL.length) - 1;
+            life.bondedSummons = json.optInt("bondedSummons") & summonMask;
+            life.duelSummons = json.optInt("duelSummons") & summonMask;
+            JSONArray summons = json.optJSONArray("summons");
+            if (summons == null) life.grantStartingSummon();
+            else for (int i = 0; i < life.summonBonds.length; i++) {
+                life.summonBonds[i] = bounded(summons.optInt(i), 100);
+            }
             JSONArray styles = json.getJSONArray("styles");
             for (int i = 0; i < life.style.length; i++) life.style[i] = bounded(styles.getInt(i), Portrait.OPTIONS[i].length - 1);
             JSONArray bonds = json.getJSONArray("bonds");
@@ -41,7 +56,13 @@ final class SaveGame {
             JSONArray journal = json.getJSONArray("journal");
             for (int i = 0; i < Math.min(100, journal.length()); i++) {
                 JSONObject event = journal.getJSONObject(i);
-                life.journal.add(new Life.Event(event.getString("date"), event.getString("title"), event.getString("detail")));
+                String title = event.getString("title");
+                life.journal.add(new Life.Event(event.getString("date"), title, event.getString("detail")));
+                if (!json.has("scoutedMissions")) {
+                    for (Summon summon : Summon.ALL) {
+                        if (summon.mission.title.equals(title)) life.scoutedMissions |= summon.mission.mask();
+                    }
+                }
             }
             return life;
         } catch (JSONException error) {
@@ -67,6 +88,15 @@ final class SaveGame {
             json.put("enemyHp", life.enemyHp);
             json.put("round", life.round);
             json.put("duelLog", life.duelLog);
+            json.put("burnTurns", life.burnTurns);
+            json.put("observedMove", life.observedMove);
+            json.put("bindUsed", life.bindUsed);
+            json.put("eyeAwakened", life.eyeAwakened);
+            json.put("eyeUsed", life.eyeUsed);
+            json.put("scoutedMissions", life.scoutedMissions);
+            json.put("bondedSummons", life.bondedSummons);
+            json.put("duelSummons", life.duelSummons);
+            json.put("summons", new JSONArray(life.summonBonds));
             json.put("styles", new JSONArray(life.style));
             json.put("bonds", new JSONArray(life.bonds));
             JSONObject stats = new JSONObject();

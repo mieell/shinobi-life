@@ -61,6 +61,45 @@ final class Marks extends View {
                 c.drawCircle(12, 12, 9, paint);
                 line(c, 12, 7, 16, 12, 12, 17, 8, 12, 12, 7);
                 break;
+            case "summons":
+                c.drawOval(6, 12, 18, 21, paint);
+                c.drawOval(3, 7, 7, 12, paint);
+                c.drawOval(8, 3, 11, 9, paint);
+                c.drawOval(13, 3, 16, 9, paint);
+                c.drawOval(17, 7, 21, 12, paint);
+                break;
+            case "SHRIKE":
+                line(c, 20, 8, 16, 7, 13, 9, 9, 3, 5, 4, 8, 11, 3, 17, 9, 19, 14, 16, 16, 11, 21, 9, 20, 8);
+                c.drawCircle(15, 9, .6f, paint);
+                break;
+            case "TORTOISE":
+                c.drawArc(4, 5, 19, 20, 180, 180, false, paint);
+                line(c, 4, 12.5f, 19, 12.5f, 20, 9, 22, 9, 22, 14, 19, 15, 4, 15, 2, 12, 4, 12.5f);
+                line(c, 6, 15, 6, 19, 9, 19, 9, 15);
+                line(c, 14, 15, 14, 19, 17, 19, 17, 15);
+                line(c, 9, 7, 10, 11, 14, 11, 15, 7);
+                break;
+            case "OTTER":
+                c.drawCircle(6, 6, 2.5f, paint);
+                c.drawCircle(18, 6, 2.5f, paint);
+                c.drawOval(4, 5, 20, 20, paint);
+                c.drawCircle(9, 11, .7f, paint);
+                c.drawCircle(15, 11, .7f, paint);
+                c.drawOval(8.5f, 13.5f, 15.5f, 18, paint);
+                c.drawCircle(12, 14, 1, paint);
+                break;
+            case "MOTH":
+                line(c, 11, 10, 4, 3, 2, 5, 4, 13, 8, 14, 5, 19, 9, 20, 12, 16, 15, 20, 19, 19, 16, 14, 20, 13, 22, 5, 20, 3, 13, 10);
+                c.drawOval(10.5f, 8, 13.5f, 18, paint);
+                line(c, 12, 8, 9, 4);
+                line(c, 12, 8, 15, 4);
+                break;
+            case "LYNX":
+                line(c, 5, 13, 4, 4, 10, 8, 14, 8, 20, 4, 19, 13, 21, 16, 17, 17, 16, 20, 8, 20, 7, 17, 3, 16, 5, 13);
+                line(c, 11, 15, 12, 16, 13, 15);
+                c.drawCircle(8, 13, .7f, paint);
+                c.drawCircle(16, 13, .7f, paint);
+                break;
             default:
                 int index = Integer.parseInt(mark);
                 paint.setStyle(Paint.Style.FILL);

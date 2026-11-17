@@ -30,14 +30,20 @@ final class Portrait extends View {
     private final int[] style;
     private final int age;
     private final int backdrop;
+    private final EyePower eyePower;
 
     Portrait(Context context, int[] style, int age, int backdrop, String label) {
+        this(context, style, age, backdrop, label, null);
+    }
+
+    Portrait(Context context, int[] style, int age, int backdrop, String label, EyePower eyePower) {
         super(context);
         this.style = style;
         this.age = age;
         this.backdrop = backdrop;
+        this.eyePower = eyePower;
         clip.addCircle(48, 48, 46, Path.Direction.CW);
-        setContentDescription(label);
+        setContentDescription(eyePower == null ? label : label + ", " + eyePower.title + " awakened");
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
 
@@ -68,12 +74,8 @@ final class Portrait extends View {
         line(canvas, 55, 43, 62, 44, INK, 1.8f);
         oval(canvas, 33, 47, 42, 54, Color.WHITE, false);
         oval(canvas, 54, 47, 63, 54, Color.WHITE, false);
-        circle(canvas, 38, 50, 3, eye);
-        circle(canvas, 58, 50, 3, eye);
-        circle(canvas, 38, 50, 1.5f, INK);
-        circle(canvas, 58, 50, 1.5f, INK);
-        circle(canvas, 38.7f, 49, 0.8f, Color.WHITE);
-        circle(canvas, 58.7f, 49, 0.8f, Color.WHITE);
+        iris(canvas, 38, eye);
+        iris(canvas, 58, eye);
         line(canvas, 47, 55, 46, 58, 0x887C4C3C, 1.4f);
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(1.6f);
@@ -100,6 +102,21 @@ final class Portrait extends View {
             line(canvas, 58, 58, 62, 57, 0x887C4C3C, 1);
         }
         canvas.restore();
+    }
+
+    private void iris(Canvas c, float x, int normalColor) {
+        if (eyePower == EyePower.SPARKGLASS) {
+            shape(c, 0xFFBE4537, false, x, 45.5f, x + 4, 50, x, 54.5f, x - 4, 50);
+            line(c, x - 1.6f, 51.2f, x + 1.6f, 48.8f, 0xFFFFE4A4, 1.4f);
+        } else if (eyePower == EyePower.HORIZON) {
+            oval(c, x - 4.5f, 46, x + 4.5f, 54, 0xFF6542A1, false);
+            line(c, x - 3, 50, x + 3, 50, 0xFFF3CDFB, 1.2f);
+            shape(c, INK, false, x, 47, x + 1.2f, 50, x, 53, x - 1.2f, 50);
+        } else {
+            circle(c, x, 50, 3, normalColor);
+            circle(c, x, 50, 1.5f, INK);
+            circle(c, x + .7f, 49, .8f, Color.WHITE);
+        }
     }
 
     private void hair(Canvas c, int color) {
