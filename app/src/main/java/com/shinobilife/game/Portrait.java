@@ -20,9 +20,12 @@ final class Portrait extends View {
         {"Porcelain", "Peach", "Warm Tan", "Copper", "Umber", "Deep Brown"},
         {"Trail Jacket", "Crimson Wrap", "Academy Vest", "Travel Cloak", "Ivory Kimono", "Shadow Haori", "Ward Armor"},
         {"None", "Cheek Mark", "Brow Cut", "Bridge Scar", "Sage Marks"},
-        {"None", "Gold Stud", "Red Ribbon", "Round Glasses", "Headband", "Fox Mask", "Face Mask"}
+        {"None", "Gold Stud", "Red Ribbon", "Round Glasses", "Headband", "Fox Mask", "Face Mask"},
+        {"Classic", "Sharp", "Round", "Upturned"},
+        {"Angular", "Soft", "Straight", "Broad"},
+        {"Soft Smile", "Neutral", "Big Smile", "Frown"}
     };
-    static final String[] LABELS = {"Hair style", "Hair color", "Eye color", "Skin tone", "Outfit", "Scar & Marks", "Gear & Acc."};
+    static final String[] LABELS = {"Hair style", "Hair color", "Eye color", "Skin tone", "Outfit", "Scar & Marks", "Gear & Acc.", "Eye shape", "Nose", "Mouth"};
 
     private static final int INK = 0xFF1F1A28;
     private static final int[] HAIR = {
@@ -62,6 +65,33 @@ final class Portrait extends View {
     private static final Path RIGHT_BROW = vector("M 65 47 Q 73 44 80 48 L 79 50 Q 73 47 66 49 Z");
     private static final Path NOSE = vector("M 59 57 L 61 63 L 58 64.5");
     private static final Path MOUTH = vector("M 53 74 Q 60 77.5 67 73.5");
+
+    private static final Path[][] EYE_SHAPES = {
+        {LEFT_EYE, RIGHT_EYE, LEFT_LASH, RIGHT_LASH},
+        {vector("M 40 54 L 54 54 Q 53 58 47 58 Q 43 58 40 54 Z"),
+         vector("M 66 54 L 80 54 Q 77 58 73 58 Q 67 58 66 54 Z"),
+         vector("M 40 54 Q 47 51 55 54"), vector("M 65 54 Q 73 51 80 54")},
+        {vector("M 41 55 Q 42 49 48 49 Q 53 49 54 55 Q 54 61 48 61 Q 42 61 41 55 Z"),
+         vector("M 66 55 Q 67 49 73 49 Q 78 49 79 55 Q 78 61 73 61 Q 67 61 66 55 Z"),
+         vector("M 40 55 Q 42 48 48 49 Q 54 49 55 55"), vector("M 65 55 Q 67 49 73 49 Q 79 48 80 55")},
+        {vector("M 40 52 Q 49 50 54 56 Q 50 60 46 58 Z"), vector("M 66 56 Q 71 50 80 52 L 74 58 Q 69 60 66 56 Z"),
+         vector("M 39 52 Q 48 48 55 56"), vector("M 65 56 Q 72 48 81 52")}
+    };
+    private static final Path[] NOSES = {NOSE,
+            vector("M 59 58 Q 56 63 58 65 Q 61 67 64 64"),
+            vector("M 60 55 L 60 64 L 63 65"),
+            vector("M 59 58 Q 55 62 56 65 Q 60 67 65 64")};
+    private static final Path[] MOUTHS = {MOUTH,
+            vector("M 53 75 Q 60 73 67 75"),
+            vector("M 52 73 Q 60 76 68 72 Q 63 81 57 79 Q 53 78 52 73 Z"),
+            vector("M 53 77 Q 60 71 67 77")};
+    private boolean evolvedEye, guardian;
+
+    void setBloodlineVisuals(boolean evolved, boolean guard) {
+        evolvedEye = evolved;
+        guardian = guard;
+        invalidate();
+    }
 
     // Outfit detail paths
     private static final Path JACKET_COLLAR = vector("M 42 93 L 47 84 L 60 99 L 73 84 L 78 93 L 71 107 L 60 116 L 49 107 Z");
@@ -180,7 +210,7 @@ final class Portrait extends View {
     private static int clamp(int index, int len) { return Math.max(0, Math.min(len - 1, index)); }
 
     private int part(int slot) {
-        int raw = slot == previewSlot ? previewValue : style[slot];
+        int raw = slot == previewSlot ? previewValue : slot < style.length ? style[slot] : 0;
         return clamp(raw, OPTIONS[slot].length);
     }
 
@@ -192,6 +222,21 @@ final class Portrait extends View {
         c.clipPath(frame);
 
         drawBackdrop(c);
+        if (guardian) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(3);
+            paint.setColor(0x80F38B6D);
+            c.drawRoundRect(6, 6, 114, 114, 21, 21, paint);
+            paint.setColor(0xA8FFC078);
+            c.drawArc(12, 12, 108, 111, 198, 144, false, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+        c.save();
+        if (previewSlot >= 7) c.scale(1.65f, 1.65f, 60, 61);
+        else if (age < 15) {
+            float childScale = age < 6 ? .78f : .90f;
+            c.scale(childScale, childScale, 60, 109);
+        }
 
         int hair = HAIR[age >= 65 ? 2 : part(1)];
         int skin = SKIN[part(3)];
@@ -204,6 +249,7 @@ final class Portrait extends View {
         drawScarsAndMarks(c, skin);
         drawFrontHair(c, hair, hairStyle);
         drawAccessories(c, skin);
+        c.restore();
 
         // Subtle inner frame edge highlight
         paint.setStyle(Paint.Style.STROKE);
@@ -393,14 +439,16 @@ final class Portrait extends View {
         layer(c, RIGHT_BROW, browColor, 0);
 
         int eyeColor = EYES[part(2)];
-        drawEye(c, LEFT_EYE, 47.6f, 54.6f, eyeColor);
-        drawEye(c, RIGHT_EYE, 72.4f, 54.6f, eyeColor);
-        stroke(c, LEFT_LASH, INK, 1.55f);
-        stroke(c, RIGHT_LASH, INK, 1.55f);
+        Path[] eyeShape = EYE_SHAPES[part(7)];
+        drawEye(c, eyeShape[0], 47.6f, 54.6f, eyeColor);
+        drawEye(c, eyeShape[1], 72.4f, 54.6f, eyeColor);
+        stroke(c, eyeShape[2], INK, 1.55f);
+        stroke(c, eyeShape[3], INK, 1.55f);
 
         // Nose & mouth
-        stroke(c, NOSE, tone(skin, INK, .42f), 1.05f);
-        stroke(c, MOUTH, tone(skin, INK, .66f), 1.15f);
+        stroke(c, NOSES[part(8)], tone(skin, INK, .42f), 1.05f);
+        if (part(9) == 2) layer(c, MOUTHS[2], 0xFF9D4F62, 0);
+        stroke(c, MOUTHS[part(9)], tone(skin, INK, .66f), 1.15f);
         segment(c, 57, 79, 63, 79, tone(skin, INK, .28f), 0.85f);
 
         if (age >= 55) {
@@ -456,6 +504,10 @@ final class Portrait extends View {
             paint.setColor(0xFFFAF6F0);
             c.drawCircle(x + 1.45f, y - 1.45f, 0.95f, paint);
             c.drawCircle(x - 1.2f, y + 1.4f, 0.5f, paint);
+        }
+        if (evolvedEye && eyePower != null) {
+            segment(c, x - 3.2f, y - 2.8f, x + 3.2f, y + 2.8f, 0xFFEFE2A0, .85f);
+            segment(c, x + 3.2f, y - 2.8f, x - 3.2f, y + 2.8f, 0xFFEFE2A0, .85f);
         }
         c.restore();
     }

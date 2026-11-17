@@ -15,6 +15,12 @@ record CombatArt(String name, String school, int damage, int chakra, Effect effe
                 + (effect == Effect.HIT ? "" : ". " + effect.detail + ".");
     }
 
+    CombatArt withMastery(int rank) {
+        if (rank == 0) return this;
+        return new CombatArt((rank == 2 ? "Mastered " : "Refined ") + name, school,
+                damage + rank * 4, Math.max(0, chakra - rank * 2), effect);
+    }
+
     static CombatArt forClan(Clans.Clan clan) {
         return switch (clan.name()) {
             case "Aon" -> new CombatArt("Lantern Gale", "Wind", 20, 14, Effect.WARD);

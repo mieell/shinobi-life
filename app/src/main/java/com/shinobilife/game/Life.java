@@ -83,7 +83,7 @@ final class Life {
     int workPay() { return career.pay + Math.min(30, careerShifts / 3 * 10); }
 
     boolean changeCareer(Career next) {
-        if (next == career || get(Stat.SKILL) < next.skill || enemyHp > 0 || worked) return false;
+        if (age() < ADULT_AGE || next == career || get(Stat.SKILL) < next.skill || enemyHp > 0 || worked) return false;
         career = next;
         careerShifts = 0;
         note("Started work as " + next.title, "The village accepted your application. Your starting pay is " + next.pay + " coins per shift.");
@@ -119,7 +119,7 @@ final class Life {
     Interest[] residents() {
         if (residents != null) return residents;
         residents = new Interest[RESIDENT_COUNT];
-        if (generation == 1) {
+        if (generation == 1 && !variedContacts) {
             residents[0] = Interest.EMI; residents[1] = Interest.HARU;
             residents[2] = Interest.RENKA; residents[3] = Interest.YUNA;
         }
@@ -142,7 +142,10 @@ final class Life {
         return residents;
     }
 
-    int residentAge(Interest interest) { return Math.max(18, 18 + interest.ageOffset + (season - generationStart) / 4); }
+    int residentAge(Interest interest) {
+        if (variedContacts && interest.id % 3 != 0) return Math.max(0, age() + interest.ageOffset);
+        return Math.max(18, 18 + interest.ageOffset + (season - generationStart) / SEASONS.length);
+    }
 
     enum RomanceAction {
         INTRODUCE("Introduce yourself", 0, 4, 0, 14, 2),
@@ -168,9 +171,10 @@ final class Life {
     int affection(Interest interest) { return affection[interest.ordinal()]; }
     boolean isPartner(Interest interest) { return partner == interest.ordinal(); }
 
-    String romanceStatus(Interest interest) {
+    String romanceStatus(Interest interest, boolean residentsOnly) {
         if (isPartner(interest)) return married ? "Spouse" : "Partner";
         int value = affection(interest);
+        if (residentsOnly || residentAge(interest) < ADULT_AGE) return value == 0 ? "New face" : "Acquaintance";
         return value == 0 ? "New face" : partner >= 0 ? "Acquaintance" : value < 24 ? "Getting acquainted" : "Ready to date";
     }
 
@@ -178,6 +182,10 @@ final class Life {
 
     String romanceBlocker(Interest interest, RomanceAction action) {
         if (deceased) return "This life has ended.";
+        if ((age() < ADULT_AGE || residentAge(interest) < ADULT_AGE)
+                && action != RomanceAction.INTRODUCE && action != RomanceAction.TALK)
+            return "Both people must be at least 18 to date.";
+        if (age() < 3) return "You can meet village residents at age 3.";
         if (enemyHp > 0) return "Finish your active duel first.";
         if (partner >= 0 && !isPartner(interest) && action != RomanceAction.INTRODUCE && action != RomanceAction.TALK)
             return "You are already in an exclusive relationship.";
@@ -238,7 +246,7 @@ final class Life {
     final List<Event> journal = new ArrayList<>();
     final EnumMap<Stat, Integer> stats = new EnumMap<>(Stat.class);
     final int[] bonds = {64, 52, 32};
-    final int[] style = {0, 0, 1, 2, 0, 0, 0};
+    final int[] style = {0, 0, 1, 2, 0, 0, 0, 0, 0, 0};
     final int[] summonBonds = new int[Summon.ALL.length];
 
     String name;
@@ -250,7 +258,96 @@ final class Life {
     int enemyHp, round;
     int burnTurns, observedMove;
     boolean bindUsed;
-    int inheritedEyes = -1, awakenedEyes, usedEyes;
+    int inheritedEyes = -1, awakenedEyes, usedEyes, evolvedEyes, usedForms;
+    final int[] eyeTrials = new int[EyePower.values().length];
+    int clanPractice, guardianTurns, sealTurns;
+    int childhoodActions;
+    boolean variedContacts;
+    enum Aptitude {
+        NONE("No early aptitude", Stat.SKILL, 0),
+        QUICK_STUDY("Quick study", Stat.SKILL, 6),
+        DEEP_RESERVE("Deep chakra reserve", Stat.CHAKRA, 17),
+        TOUGH_CONSTITUTION("Tough constitution", Stat.HEALTH, 12),
+        HIGH_ENERGY("High energy", Stat.STAMINA, 14),
+        SUNNY("Sunny disposition", Stat.MOOD, 14),
+        CHARMING("Naturally charming", Stat.LOOKS, 8);
+
+        final String title;
+        final Stat stat;
+        final int bonus;
+        Aptitude(String title, Stat stat, int bonus) {
+            this.title = title; this.stat = stat; this.bonus = bonus;
+        }
+    }
+    Aptitude aptitude = Aptitude.NONE;
+    static final int SHINOBI_AGE = 15, ADULT_AGE = 18;
+    static final int[] START_AGES = {0, 8, 15, 18};
+    static final String[] START_LABELS = {"Newborn", "Academy student · 8", "Teen shinobi · 15", "Adult · 18"};
+
+    enum ChildhoodAction {
+        PLAY("Play with family", "+6 Happiness · +4 family Trust", 0),
+        REST("Take a nap", "+12 Stamina · +8 Health", 0),
+        STORIES("Listen to village stories", "+2 Skill · +3 Happiness", 3),
+        DRILLS("Practice academy drills", "8 Stamina · +3 Skill", 6);
+        final String title, result;
+        final int age;
+        ChildhoodAction(String title, String result, int age) {
+            this.title = title; this.result = result; this.age = age;
+        }
+        int mask() { return 1 << ordinal(); }
+    }
+
+    boolean childhoodAction(ChildhoodAction action) {
+        if (deceased || age() >= SHINOBI_AGE || age() < action.age || (childhoodActions & action.mask()) != 0
+                || (action == ChildhoodAction.DRILLS && get(Stat.STAMINA) < 8)) return false;
+        childhoodActions |= action.mask();
+        switch (action) {
+            case PLAY -> { add(Stat.MOOD, 6); bonds[0] = Math.min(100, bonds[0] + 4); }
+            case REST -> { add(Stat.STAMINA, 12); add(Stat.HEALTH, 8); }
+            case STORIES -> { add(Stat.SKILL, 2); add(Stat.MOOD, 3); }
+            case DRILLS -> { add(Stat.STAMINA, -8); add(Stat.SKILL, 3); }
+        }
+        note(action.title, action.result + ".");
+        return true;
+    }
+
+    int mastery() {
+        int skill = get(Stat.SKILL);
+        return clanPractice >= 15 && skill >= 35 ? 2 : clanPractice >= 6 && skill >= 22 ? 1 : 0;
+    }
+
+    CombatArt clanArt() { return CombatArt.forClan(clan()).withMastery(mastery()); }
+
+    boolean hasEvolved(EyePower eye) { return eye != null && (evolvedEyes & eye.mask()) != 0; }
+    int eyeDamage(EyePower eye) { return eye.damage(observedMove) + (hasEvolved(eye) ? 6 : 0); }
+
+    boolean canEvolve(EyePower eye) {
+        return !deceased && enemyHp == 0 && (awakenedEyes & eye.mask()) != 0 && !hasEvolved(eye)
+                && eyeTrials[eye.ordinal()] >= 3 && get(Stat.SKILL) >= 35;
+    }
+
+    boolean evolve(EyePower eye) {
+        if (!canEvolve(eye)) return false;
+        evolvedEyes |= eye.mask();
+        note("Awakened the " + eye.evolution, "Your bloodline evolved. Its regular attack now deals 6 more damage.");
+        return true;
+    }
+
+    String manifestationBlocker(EyePower eye) {
+        if (!hasEvolved(eye) || get(Stat.SKILL) < 45 || challengerWins < 2) return "Needs an evolved eye, 45 Skill, and 2 circuit wins beyond Cedar Pass";
+        if ((usedForms & eye.mask()) != 0) return "Already used this duel";
+        return get(Stat.CHAKRA) < eye.formChakra ? "Low chakra" : "";
+    }
+
+    boolean castManifestation(EyePower eye) {
+        if (enemyHp <= 0 || !manifestationBlocker(eye).isEmpty()) return false;
+        usedForms |= eye.mask();
+        add(Stat.CHAKRA, -eye.formChakra);
+        if (eye == EyePower.SPARKGLASS) guardianTurns = 2;
+        if (eye == EyePower.FARWATCH) sealTurns = 2;
+        return resolveRound("You manifested " + eye.manifestation, eye.formDamage,
+                eye == EyePower.HORIZON ? Counter.STOP : Counter.FULL);
+    }
     String duelLog = "";
     int startAge = 18, generation = 1, generationStart;
     int deathAge = 72 + new Random(worldSeed).nextInt(25);
@@ -263,6 +360,7 @@ final class Life {
 
     String familyBlocker() {
         if (deceased || enemyHp > 0) return "Finish this life event first.";
+        if (age() < ADULT_AGE) return "Family planning opens at age 18.";
         if (partner < 0 || affection[partner] < 70) return "Requires a partner with 70 Affection.";
         if (children.size() >= 6) return "Your household already has six children.";
         if (season < nextChildSeason) return "You can plan another child in a later season.";
@@ -359,10 +457,27 @@ final class Life {
     }
 
     static Life rollNewLife(String name, int village, int gender, int presence, int[] style, Random random) {
+        return rollNewLife(name, village, gender, presence, style, ADULT_AGE, random);
+    }
+
+    static Life rollNewLife(String name, int village, int gender, int presence, int[] style, int age, Random random) {
         int clan = rollClan(village, random);
         Life life = begin(name, clan, village, presence, style);
         life.gender = gender;
+        life.startAge = age;
+        life.variedContacts = true;
+        life.worldSeed = random.nextLong();
+        life.deathAge = 72 + new Random(life.worldSeed).nextInt(25);
+        if (age < 6) life.stats.put(Stat.SKILL, life.clan().perk() == Stat.SKILL ? life.clan().start() : 0);
+        for (int i = 0; i < life.bonds.length; i++) life.bonds[i] += random.nextInt(13) - 6;
+        life.journal.clear();
+        life.note(age == 0 ? "Born in " + life.village() : "A fresh start",
+                age == 0 ? "Your family welcomed you in " + life.village() + "." :
+                        "Your story began in " + life.village() + " at age " + age + ".");
         life.family = random.nextInt(FAMILIES.length);
+        life.aptitude = Aptitude.values()[1 + random.nextInt(Aptitude.values().length - 1)];
+        life.add(life.aptitude.stat, life.aptitude.bonus);
+        life.borderTension = 16 + random.nextInt(22);
         life.guardian = (village + random.nextInt(GUARDIANS.length)) % GUARDIANS.length;
         String perk = switch (life.family) {
             case 1 -> { life.add(Stat.COINS, 75); yield "+75 Coins"; }
@@ -372,11 +487,33 @@ final class Life {
             default -> { life.add(Stat.MOOD, 10); yield "+10 Happiness"; }
         };
         life.note("Your roots in " + life.village(), GENDERS[gender] + " · " + life.clan().name()
-                + ". " + FAMILIES[life.family] + " with " + life.contactName(0) + ". " + perk + ".");
+                + ". " + FAMILIES[life.family] + " with " + life.contactName(0) + ". " + perk + ". " + life.aptitude.title + ".");
         return life;
     }
 
-    String contactName(int contact) { return contact == 0 ? GUARDIANS[guardian] : CONTACTS[contact]; }
+    String contactName(int contact) {
+        if (contact == 0) return GUARDIANS[guardian];
+        if (!variedContacts) return CONTACTS[contact];
+        int index = Math.floorMod((int) (worldSeed >>> (contact * 13)), RESIDENT_GIVEN.length / 2);
+        int surname = Math.floorMod((int) (worldSeed >>> (contact * 7)), RESIDENT_SURNAMES.length);
+        return RESIDENT_GIVEN[index * 2 + contact - 1] + " " + RESIDENT_SURNAMES[surname];
+    }
+
+    boolean knowsContact(int contact) { return contact == 0 || age() >= (contact == 1 ? 3 : 6); }
+
+    int contactAge(int contact) {
+        if (!variedContacts) return contact == 0 ? age() + 20 : age();
+        int offset = new Random(worldSeed ^ (0x9e3779b97f4a7c15L * (contact + 1))).nextInt(contact == 0 ? 19 : 5);
+        return age() + (contact == 0 ? 20 + offset : offset - 2);
+    }
+
+    String contactHistory(int contact) {
+        String name = contactName(contact);
+        if (contact == 0) return name + " helped raise you in " + VILLAGES[homeVillage] + ".";
+        if (contact == 1) return name + (age() < 6 ? " grew up playing with you near home." :
+                " was one of your first friends in " + VILLAGES[homeVillage] + ".");
+        return name + " first challenged you during an academy drill.";
+    }
 
     boolean visitVillage(int destination) {
         if (enemyHp > 0 || destination < 0 || destination >= VILLAGES.length || destination == village
@@ -468,7 +605,11 @@ final class Life {
     int academyCredits;
     boolean attendedClass, campaigned, governed, warService;
 
-    String rank() { return hokage ? "Hokage" : academyRank.title; }
+    String rank() {
+        if (age() < 6) return "Child";
+        if (age() < SHINOBI_AGE) return "Academy student";
+        return hokage ? "Hokage" : academyRank.title;
+    }
 
     AcademyRank nextRank() {
         return switch (academyRank) {
@@ -479,7 +620,7 @@ final class Life {
     }
 
     boolean attendClass(Lesson lesson) {
-        if (deceased || enemyHp > 0 || attendedClass || get(Stat.STAMINA) < LESSON_STAMINA) return false;
+        if (age() < 6 || deceased || enemyHp > 0 || attendedClass || get(Stat.STAMINA) < LESSON_STAMINA) return false;
         attendedClass = true;
         add(Stat.STAMINA, -LESSON_STAMINA);
         add(Stat.SKILL, lesson.skill);
@@ -496,7 +637,7 @@ final class Life {
     }
 
     boolean canTakeExam() {
-        if (deceased || enemyHp > 0 || nextRank() == null) return false;
+        if (age() < SHINOBI_AGE || deceased || enemyHp > 0 || nextRank() == null) return false;
         boolean first = academyRank == AcademyRank.GENIN;
         return academyCredits >= (first ? 2 : 3) && get(Stat.SKILL) >= (first ? 22 : 35)
                 && victories >= (first ? 1 : 3) && get(Stat.STAMINA) >= (first ? 16 : 22);
@@ -537,7 +678,7 @@ final class Life {
     }
 
     boolean canRunForHokage() {
-        return !deceased && enemyHp == 0 && village == LEAF && !hokage && academyRank == AcademyRank.JONIN
+        return age() >= ADULT_AGE && !deceased && enemyHp == 0 && village == LEAF && !hokage && academyRank == AcademyRank.JONIN
                 && get(Stat.FAME) >= 55 && electionSupport() >= 60;
     }
 
@@ -658,6 +799,116 @@ final class Life {
         } else leafStability = Math.min(100, leafStability + 2);
     }
 
+    record SeasonChoice(String title, Stat priceStat, int price, Stat rewardStat, int reward, String outcome) {
+        String terms() {
+            return (price == 0 ? "" : price + " " + priceStat.label + " · ") + "+" + reward + " " + rewardStat.label;
+        }
+    }
+
+    enum SeasonEvent {
+        FLOOD("Flood at the ferry", "The river washed away the ferry landing. Neighbors are hauling timber uphill.",
+                new SeasonChoice("Help rebuild", Stat.STAMINA, 12, Stat.FAME, 8, "You worked alongside the ferry crew until the landing reopened."),
+                new SeasonChoice("Pay for a temporary ferry", Stat.COINS, 35, Stat.BOND, 6, "Your payment got families across before nightfall.")),
+        ARCHIVE("A disputed scroll", "The academy archivist wants a second opinion on a damaged scroll.",
+                new SeasonChoice("Study the old script", Stat.STAMINA, 10, Stat.SKILL, 4, "You reconstructed a training exercise from the surviving lines."),
+                new SeasonChoice("Buy a private reading", Stat.COINS, 45, Stat.CHAKRA, 26, "The archivist traded a guided reading for money to restore the scroll.")),
+        MARKET("The lantern market", "The evening stalls are short on staff, and your neighbors have set aside a table.",
+                new SeasonChoice("Cover a stall", Stat.STAMINA, 12, Stat.COINS, 80, "The stall owner split the evening profits with you."),
+                new SeasonChoice("Host the table", Stat.COINS, 22, Stat.MOOD, 15, "Your neighbors stayed long after the lanterns burned down.")),
+        CARAVAN("Medicine on the ridge", "A merchant is carrying medicine to a settlement before the weather turns.",
+                new SeasonChoice("Carry the crates", Stat.STAMINA, 14, Stat.COINS, 70, "You delivered the medicine before the road closed."),
+                new SeasonChoice("Donate to the clinic", Stat.COINS, 30, Stat.FAME, 9, "The clinic treated several patients using supplies you funded.")),
+        GARDEN("The abandoned garden", "Your academy friends want to turn a ruined courtyard into a public garden.",
+                new SeasonChoice("Clear the courtyard", Stat.STAMINA, 10, Stat.BOND, 7, "You spent the afternoon clearing stones together."),
+                new SeasonChoice("Buy seedlings", Stat.COINS, 25, Stat.MOOD, 13, "The first plants went in before sunset.")),
+        EXHIBITION("A public demonstration", "Traveling students want to see how local shinobi train.",
+                new SeasonChoice("Demonstrate footwork", Stat.STAMINA, 14, Stat.FAME, 10, "The students repeated your drill and thanked you at the gate."),
+                new SeasonChoice("Join the practice", Stat.CHAKRA, 14, Stat.SKILL, 5, "Trading drills with the travelers sharpened your technique."));
+
+        final String title, situation;
+        final SeasonChoice[] choices;
+        SeasonEvent(String title, String situation, SeasonChoice first, SeasonChoice second) {
+            this.title = title; this.situation = situation; choices = new SeasonChoice[]{first, second};
+        }
+    }
+
+    int resolvedEvent = -1;
+
+    SeasonEvent seasonalEvent() {
+        SeasonEvent[] options = SeasonEvent.values();
+        int cycle = season / options.length;
+        shuffleSeasonEvents(options, cycle);
+        int index = season % options.length;
+        if (cycle > 0 && index < 2) {
+            SeasonEvent[] previous = SeasonEvent.values();
+            shuffleSeasonEvents(previous, cycle - 1);
+            if (options[0] == previous[previous.length - 1]) index = 1 - index;
+        }
+        return options[index];
+    }
+
+    private void shuffleSeasonEvents(SeasonEvent[] options, int cycle) {
+        Random random = new Random(worldSeed ^ (0x9e3779b97f4a7c15L * (cycle + 1L)));
+        for (int i = options.length - 1; i > 0; i--) {
+            int other = random.nextInt(i + 1);
+            SeasonEvent event = options[i];
+            options[i] = options[other];
+            options[other] = event;
+        }
+    }
+
+    boolean hasSeasonEvent() { return age() >= SHINOBI_AGE && !deceased && enemyHp == 0 && resolvedEvent != season; }
+
+    boolean resolveSeasonEvent(int choice) {
+        if (!hasSeasonEvent() || choice < 0 || choice >= seasonalEvent().choices.length) return false;
+        SeasonEvent event = seasonalEvent();
+        SeasonChoice option = event.choices[choice];
+        if (get(option.priceStat()) < option.price()) return false;
+        resolvedEvent = season;
+        add(option.priceStat(), -option.price());
+        add(option.rewardStat(), option.reward());
+        note(event.title, option.outcome() + " " + option.terms() + ".");
+        return true;
+    }
+
+    enum Rival {
+        IBARA("Ibara", "Cedar Pass", "Alternates quick jabs with a heavier third strike.",
+                AcademyRank.GENIN, 72, 10, 18, 3, "Stone Jab", "Cedar Breaker", Missions.DUEL.coins, Missions.DUEL.fame),
+        KANA("Kana", "Lantern Bridge", "Starts with a heavy opening and repeats it every other round.",
+                AcademyRank.CHUNIN, 88, 7, 21, 2, "River Cut", "Lantern Rush", 170, 19),
+        DAICHI("Daichi", "Storm Court", "Keeps steady pressure and delivers a heavy strike every third round.",
+                AcademyRank.JONIN, 104, 14, 25, 3, "Thunder Palm", "Storm Hammer", 240, 25);
+
+        final String name, arena, description, lightName, heavyName;
+        final AcademyRank rank;
+        final int hp, light, heavy, cadence, coins, fame;
+
+        Rival(String name, String arena, String description, AcademyRank rank, int hp, int light, int heavy,
+              int cadence, String lightName, String heavyName, int coins, int fame) {
+            this.name = name; this.arena = arena; this.description = description; this.rank = rank;
+            this.hp = hp; this.light = light; this.heavy = heavy; this.cadence = cadence;
+            this.lightName = lightName; this.heavyName = heavyName; this.coins = coins; this.fame = fame;
+        }
+        int damage(int turn) { return (this == KANA ? turn % cadence == 1 : turn % cadence == 0) ? heavy : light; }
+        String attackName(int damage) { return damage == heavy ? heavyName : lightName; }
+    }
+
+    Rival duelRival = Rival.IBARA;
+    int challengerWins;
+
+    boolean enterDuel(Rival rival) {
+        if (deceased || academyRank.ordinal() < rival.rank.ordinal() || !canStart(Missions.DUEL)) return false;
+        completed |= Missions.DUEL.mask();
+        add(Stat.STAMINA, -Missions.DUEL.stamina);
+        duelRival = rival;
+        enemyHp = rival.hp;
+        round = 1;
+        burnTurns = observedMove = duelSummons = usedEyes = usedForms = guardianTurns = sealTurns = 0;
+        bindUsed = false;
+        duelLog = rival.name + " bows. The referee calls the first round.";
+        return true;
+    }
+
     int signedSummonCount() {
         int count = 0;
         for (Summon summon : Summon.ALL) if (hasSummon(summon)) count++;
@@ -702,6 +953,7 @@ final class Life {
         completed = interacted = bondedSummons = gifted = favored = villageActions = 0;
         styled = worked = rested = meditated = false;
         attendedClass = campaigned = governed = warService = false;
+        childhoodActions = 0;
         add(Stat.STAMINA, 45);
         add(Stat.CHAKRA, 48);
         add(Stat.HEALTH, 14);
@@ -719,8 +971,40 @@ final class Life {
             detail = moments[season % moments.length] + " A shopkeeper recognized you from the mission board. +3 Happiness.";
             add(Stat.MOOD, 3);
         }
-        note(season % SEASONS.length == 0 ? "You turned " + age() : SEASONS[season % SEASONS.length] + " arrived", detail);
+        note((season - generationStart) % SEASONS.length == 0 ? "You turned " + age() : SEASONS[season % SEASONS.length] + " arrived", detail);
+        if ((season - generationStart) % 4 == 0) {
+            switch (age()) {
+                case 6 -> note("First day at the academy", "You can attend classes and start earning credits.");
+                case SHINOBI_AGE -> note("Became a Genin", "The mission board, duels, and inherited eye training are open.");
+                case ADULT_AGE -> note("Reached adulthood", "Careers, dating, and starting a family are open.");
+                default -> {
+                    if (age() < SHINOBI_AGE && age() > 0) childhoodMemory();
+                }
+            }
+        }
         updateLeafPolitics();
+    }
+
+    private void childhoodMemory() {
+        Random random = new Random(worldSeed ^ (age() * 0x9e3779b97f4a7c15L));
+        switch (random.nextInt(4)) {
+            case 0 -> {
+                add(Stat.MOOD, 5);
+                note("A surprise at home", contactName(0) + " made your favorite meal to mark the year. +5 Happiness.");
+            }
+            case 1 -> {
+                add(Stat.SKILL, 2);
+                note("An afternoon of questions", "You listened to a traveler explain how birds find their way home. +2 Skill.");
+            }
+            case 2 -> {
+                add(Stat.HEALTH, -4);
+                note("A rainy week", "A small cold kept you indoors for a few days. −4 Health.");
+            }
+            default -> {
+                bonds[0] = Math.min(100, bonds[0] + 5);
+                note("Family keepsake", contactName(0) + " told you the story behind a family keepsake. +5 family Trust.");
+            }
+        }
     }
 
     boolean train() {
@@ -741,7 +1025,7 @@ final class Life {
     }
 
     boolean work() {
-        if (worked || get(Stat.STAMINA) < 12) return false;
+        if (age() < ADULT_AGE || worked || get(Stat.STAMINA) < 12) return false;
         worked = true;
         add(Stat.STAMINA, -12);
         int pay = workPay();
@@ -771,7 +1055,7 @@ final class Life {
     }
 
     boolean interact(int contact) {
-        if ((interacted & (1 << contact)) != 0) return false;
+        if (!knowsContact(contact) || (interacted & (1 << contact)) != 0) return false;
         interacted |= 1 << contact;
         int gain = get(Stat.LOOKS) >= 75 ? 7 : 5;
         bonds[contact] = Math.min(100, bonds[contact] + gain);
@@ -781,7 +1065,7 @@ final class Life {
     }
 
     boolean gift(int contact) {
-        if (enemyHp > 0 || (gifted & (1 << contact)) != 0 || get(Stat.COINS) < GIFT_COST || bonds[contact] == 100) return false;
+        if (!knowsContact(contact) || enemyHp > 0 || (gifted & (1 << contact)) != 0 || get(Stat.COINS) < GIFT_COST || bonds[contact] == 100) return false;
         gifted |= 1 << contact;
         add(Stat.COINS, -GIFT_COST);
         int gain = Math.min(6, 100 - bonds[contact]);
@@ -792,7 +1076,7 @@ final class Life {
     }
 
     boolean canAllyFavor(int contact) {
-        return enemyHp == 0 && bonds[contact] >= FAVOR_TRUST && (favored & (1 << contact)) == 0;
+        return knowsContact(contact) && enemyHp == 0 && bonds[contact] >= FAVOR_TRUST && (favored & (1 << contact)) == 0;
     }
 
     boolean allyFavor(int contact) {
@@ -821,7 +1105,7 @@ final class Life {
     boolean isComplete(Missions mission) { return (completed & mission.mask()) != 0; }
 
     boolean canStart(Missions mission) {
-        return enemyHp == 0 && !isComplete(mission) && get(Stat.STAMINA) >= mission.stamina
+        return age() >= SHINOBI_AGE && enemyHp == 0 && !isComplete(mission) && get(Stat.STAMINA) >= mission.stamina
                 && (mission != Missions.DUEL || get(Stat.HEALTH) >= 30);
     }
 
@@ -835,33 +1119,25 @@ final class Life {
         if (!canStart(mission) || (technique && (mission == Missions.DUEL
                 || !matches(mission) || get(Stat.CHAKRA) < clan().cost()))) return false;
         if (summon != null && (technique || !canSummonOnMission(summon, mission))) return false;
+        if (mission == Missions.DUEL) return enterDuel(Rival.IBARA);
         completed |= mission.mask();
         add(Stat.STAMINA, -mission.stamina);
-        if (mission == Missions.DUEL) {
-            enemyHp = 72;
-            round = 1;
-            burnTurns = observedMove = duelSummons = 0;
-            bindUsed = false;
-            usedEyes = 0;
-            duelLog = "Ibara bows. The referee calls the first round.";
-        } else {
-            scoutedMissions |= mission.mask();
-            String detail = "+" + mission.coins + " Coins · +" + mission.fame + " Fame";
-            add(Stat.COINS, mission.coins);
-            add(Stat.FAME, mission.fame);
-            if (technique) {
-                add(Stat.CHAKRA, -clan().cost());
-                add(clan().bonus(), clan().amount());
-                detail = clan().action() + " " + detail + " · +" + clan().amount() + " " + clan().bonus().label;
-            }
-            if (summon != null) {
-                add(Stat.CHAKRA, -Summon.MISSION_CHAKRA);
-                add(summon.bonus, summon.bonusAmount);
-                detail = summon.title + " answered your call. " + detail
-                        + " · +" + summon.bonusAmount + " " + summon.bonus.label;
-            }
-            note(mission.title, detail);
+        scoutedMissions |= mission.mask();
+        String detail = "+" + mission.coins + " Coins · +" + mission.fame + " Fame";
+        add(Stat.COINS, mission.coins);
+        add(Stat.FAME, mission.fame);
+        if (technique) {
+            add(Stat.CHAKRA, -clan().cost());
+            add(clan().bonus(), clan().amount());
+            detail = clan().action() + " " + detail + " · +" + clan().amount() + " " + clan().bonus().label;
         }
+        if (summon != null) {
+            add(Stat.CHAKRA, -Summon.MISSION_CHAKRA);
+            add(summon.bonus, summon.bonusAmount);
+            detail = summon.title + " answered your call. " + detail
+                    + " · +" + summon.bonusAmount + " " + summon.bonus.label;
+        }
+        note(mission.title, detail);
         return true;
     }
 
@@ -916,7 +1192,7 @@ final class Life {
     }
 
     boolean canAwakenEye(EyePower eye) {
-        return eye != null && !deceased && (heritageEyes() & eye.mask()) != 0 && (awakenedEyes & eye.mask()) == 0
+        return age() >= SHINOBI_AGE && eye != null && !deceased && (heritageEyes() & eye.mask()) != 0 && (awakenedEyes & eye.mask()) == 0
                 && enemyHp == 0 && get(Stat.SKILL) >= eye.skill && victories >= eye.wins;
     }
 
@@ -925,7 +1201,7 @@ final class Life {
     boolean awakenEye(EyePower eye) {
         if (!canAwakenEye(eye)) return false;
         awakenedEyes |= eye.mask();
-        note(eye.title + " awakened", "You can now use " + eye.move + " at Cedar Pass. " + eye.description());
+        note(eye.title + " awakened", "You can now use " + eye.move + " in duels. " + eye.description());
         return true;
     }
 
@@ -939,17 +1215,18 @@ final class Life {
     boolean castEye(EyePower eye) {
         if (enemyHp <= 0 || !eyeDuelBlocker(eye).isEmpty()) return false;
         usedEyes |= eye.mask();
+        eyeTrials[eye.ordinal()] = Math.min(100, eyeTrials[eye.ordinal()] + 1);
         add(Stat.CHAKRA, -eye.chakra);
         String action = "You used " + eye.move;
-        if (eye == EyePower.SPARKGLASS) action += " and copied " + (observedMove == 18 ? "Cedar Breaker" : "Stone Jab");
-        return resolveRound(action, eye.damage(observedMove), Counter.STOP);
+        if (eye == EyePower.SPARKGLASS) action += " and copied " + duelRival.attackName(observedMove);
+        return resolveRound(action, eyeDamage(eye), Counter.STOP);
     }
 
     enum Move { STRIKE, GUARD, TECHNIQUE, EYE, RETREAT }
     private enum Counter { FULL, HALF, GUARD, STOP }
 
     int strikeDamage() { return 12 + get(Stat.SKILL) / 6; }
-    int incomingDamage() { return round % 3 == 0 ? 18 : 10; }
+    int incomingDamage() { return duelRival.damage(round); }
 
     String artDuelBlocker(CombatArt art) {
         if (art.effect() == CombatArt.Effect.BIND && bindUsed) return "Already used this duel";
@@ -961,7 +1238,7 @@ final class Life {
         if (move == Move.RETREAT) {
             enemyHp = 0;
             duelLog = "You conceded the match. There is another challenge next season.";
-            note("Retreated at Cedar Pass", duelLog);
+            note("Retreated at " + duelRival.arena, duelLog);
             return true;
         }
         return switch (move) {
@@ -977,8 +1254,11 @@ final class Life {
     }
 
     private boolean castArt() {
-        CombatArt art = CombatArt.forClan(clan());
+        CombatArt art = clanArt();
         if (!artDuelBlocker(art).isEmpty()) return false;
+        int before = mastery();
+        clanPractice = Math.min(1000, clanPractice + 1);
+        if (mastery() > before) note("Developed " + clanArt().name(), "Your clan technique improved through practice.");
         add(Stat.CHAKRA, -art.chakra());
         String action = "You used " + art.name();
         switch (art.effect()) {
@@ -1030,11 +1310,12 @@ final class Life {
         }
         enemyHp = Math.max(0, enemyHp - damage);
         if (enemyHp == 0) {
-            victories++;
-            add(Stat.COINS, Missions.DUEL.coins);
-            add(Stat.FAME, Missions.DUEL.fame);
-            duelLog = recap + " You won. +" + Missions.DUEL.coins + " Coins · +" + Missions.DUEL.fame + " Fame.";
-            note("Won at Cedar Pass", duelLog);
+            if (duelRival == Rival.IBARA) victories++;
+            else challengerWins++;
+            add(Stat.COINS, duelRival.coins);
+            add(Stat.FAME, duelRival.fame);
+            duelLog = recap + " You won. +" + duelRival.coins + " Coins · +" + duelRival.fame + " Fame.";
+            note("Won at " + duelRival.arena, duelLog);
             return true;
         }
         int attack = incomingDamage();
@@ -1044,15 +1325,26 @@ final class Life {
             case GUARD -> 3;
             case STOP -> 0;
         };
+        if (sealTurns > 0) {
+            sealTurns--;
+            counter = 0;
+        }
+        if (guardianTurns > 0) {
+            guardianTurns--;
+            if (counter > 0) {
+                counter = (counter + 1) / 2;
+                recap += " Glass Guardian absorbed part of the counter.";
+            }
+        }
         if (counter > 0) observedMove = attack;
         add(Stat.HEALTH, -counter);
-        duelLog = recap + (counter == 0 ? " Ibara’s counter was stopped."
-                : " Ibara used " + (attack == 18 ? "Cedar Breaker" : "Stone Jab") + " for " + counter + " damage.");
+        duelLog = recap + (counter == 0 ? " " + duelRival.name + "’s counter was stopped."
+                : " " + duelRival.name + " used " + duelRival.attackName(attack) + " for " + counter + " damage.");
         round++;
         if (get(Stat.HEALTH) == 0) {
             enemyHp = 0;
             duelLog += " The referee called the match.";
-            note("Lost at Cedar Pass", duelLog);
+            note("Lost at " + duelRival.arena, duelLog);
         }
         return true;
     }

@@ -1,6 +1,7 @@
 package com.shinobilife.game;
 
 import java.util.HashSet;
+import java.util.Random;
 import java.util.Set;
 
 import static com.shinobilife.game.Clans.Role;
@@ -51,7 +52,10 @@ final class LifeCheck {
         romanceProgression();
         lineageProgression();
         academyAndPolitics();
-        System.out.println("Life checks passed for 23 combat paths, three eye powers, five summons, meditation, gifts, favors, randomized origins, travel, escort branches, romance, mixed inheritance, succession, academy promotions, Hokage elections, war, and truces.");
+        challengesAndSeasonEvents();
+        distinctLives();
+        clanMasteryAndEyeEvolution();
+        System.out.println("Life checks passed for 23 combat paths, three eye powers, five summons, meditation, gifts, favors, randomized origins, travel, escort branches, romance, mixed inheritance, succession, academy promotions, Hokage elections, war, truces, newborn progression, varied contacts, and evolved clan techniques.");
     }
 
     private static void combatArt(int clan) {
@@ -306,6 +310,86 @@ final class LifeCheck {
         check(civilian.leafAtWar, "war can begin independently of the player");
         for (int i = 0; i < 5; i++) civilian.advance();
         check(!civilian.leafAtWar, "council can broker an AI ceasefire");
+    }
+
+    private static void challengesAndSeasonEvents() {
+        Life life = named("Benisuna");
+        check(!life.enterDuel(Life.Rival.KANA), "challenger rank gate");
+        int firstSeason = life.seasonalEvent().ordinal();
+        Life.SeasonChoice choice = life.seasonalEvent().choices[0];
+        int stamina = life.get(Stat.STAMINA);
+        check(life.resolveSeasonEvent(0) && life.get(Stat.STAMINA) == stamina - choice.price(),
+                "season event cost and outcome");
+        check(!life.resolveSeasonEvent(1), "season event resolves once");
+        life.advance();
+        check(life.hasSeasonEvent() && life.seasonalEvent().ordinal() != firstSeason, "events rotate with seasons");
+        life.academyRank = Life.AcademyRank.CHUNIN;
+        check(life.enterDuel(Life.Rival.KANA) && life.enemyHp == 88 && life.incomingDamage() == 21, "Kana opens heavy");
+        check(!life.resolveSeasonEvent(0), "event cannot interrupt a duel");
+        check(life.duel(Life.Move.TECHNIQUE) && life.observedMove == 21 && life.incomingDamage() == 7, "Kana pattern changes");
+        check(life.duel(Life.Move.TECHNIQUE) && life.duel(Life.Move.TECHNIQUE), "rival can be defeated");
+        check(life.challengerWins == 1 && life.victories == 0, "challenger wins don't replace Cedar exam wins");
+        check(!life.enterDuel(Life.Rival.IBARA), "only one match per season");
+    }
+
+    private static void distinctLives() {
+        int[] style = new int[10];
+        Life child = Life.rollNewLife("Ren", 3, 1, 1, style, 0, new Random(9));
+        Life same = Life.rollNewLife("Ren", 3, 1, 1, style, 0, new Random(9));
+        Life different = Life.rollNewLife("Ren", 3, 1, 1, style, 0, new Random(41));
+        check(!child.contactName(1).equals(child.contactName(2))
+                && !child.contactName(1).equals(different.contactName(1)), "friends and rivals vary");
+        check(child.contactName(1).equals(same.contactName(1))
+                && child.residents()[0].name.equals(same.residents()[0].name)
+                && !child.residents()[0].name.equals(different.residents()[0].name)
+                && child.residents()[0] != Life.Interest.EMI, "world population follows the life seed");
+        check(child.age() == 0 && child.knowsContact(0) && !child.knowsContact(1) && !child.interact(2),
+                "birth starts with family");
+        check(child.childhoodAction(Life.ChildhoodAction.PLAY) && !child.childhoodAction(Life.ChildhoodAction.PLAY)
+                && !child.attendClass(Life.Lesson.CONTROL) && !child.canStart(Missions.COURIER), "newborn activities");
+        for (int i = 0; i < 12; i++) { child.advance(); same.advance(); }
+        check(child.age() == 3 && child.knowsContact(1) && !child.knowsContact(2)
+                && child.journal.get(0).title().equals(same.journal.get(0).title()), "friends and stable memories at age three");
+        check(child.romance(child.residents()[0], Life.RomanceAction.INTRODUCE)
+                && !child.romance(child.residents()[0], Life.RomanceAction.WALK), "childhood introductions");
+        for (int i = 0; i < 12; i++) child.advance();
+        check(child.age() == 6 && child.knowsContact(2) && child.attendClass(Life.Lesson.CONTROL),
+                "academy classes and rival at age six");
+        for (int i = 0; i < 36; i++) child.advance();
+        check(child.age() == 15 && child.canStart(Missions.COURIER) && child.hasSeasonEvent(), "shinobi at fifteen");
+        for (int i = 0; i < 24; i++) {
+            Life.SeasonEvent event = child.seasonalEvent();
+            same.season = child.season;
+            check(event == same.seasonalEvent(), "season event follows save seed");
+            child.advance();
+            check(event != child.seasonalEvent(), "no adjacent repeats even across shuffles");
+        }
+    }
+
+    private static void clanMasteryAndEyeEvolution() {
+        Life novice = named("Kagaribi");
+        CombatArt base = novice.clanArt();
+        novice.add(Stat.SKILL, 12);
+        novice.clanPractice = 5;
+        check(novice.enterDuel(Life.Rival.IBARA) && novice.duel(Life.Move.TECHNIQUE) && novice.mastery() == 1,
+                "refinement comes from successful casts");
+        check(novice.clanArt().damage() == base.damage() + 4 && novice.clanArt().chakra() == base.chakra() - 2,
+                "refined art strength and chakra cost");
+        Life master = named("Kagaribi");
+        EyePower eye = EyePower.SPARKGLASS;
+        master.add(Stat.SKILL, 35);
+        check(master.awakenEye() && !master.evolve(eye), "evolution requires eye experience");
+        master.eyeTrials[eye.ordinal()] = 3;
+        check(master.evolve(eye) && master.hasEvolved(eye) && master.eyeDamage(eye) == eye.damage(0) + 6,
+                "evolved eye gains damage");
+        check(!master.manifestationBlocker(eye).isEmpty(), "guardian requires circuit wins");
+        master.challengerWins = 2;
+        int hp = master.get(Stat.HEALTH);
+        check(master.enterDuel(Life.Rival.IBARA) && master.castManifestation(eye)
+                && master.enemyHp == 72 - eye.formDamage && master.guardianTurns == 1, "guardian attacks and lasts");
+        check(master.get(Stat.HEALTH) == hp - 5 && !master.castManifestation(eye), "guardian halves the counter once per duel");
+        check(master.duel(Life.Move.STRIKE) && master.guardianTurns == 0 && master.get(Stat.HEALTH) == hp - 10,
+                "guardian halves a second counter");
     }
 
     private static Life named(String name) {

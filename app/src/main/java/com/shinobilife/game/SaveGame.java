@@ -54,7 +54,10 @@ final class SaveGame {
             life.meditated = json.optBoolean("meditated");
             life.gifted = json.optInt("gifted") & 7;
             life.favored = json.optInt("favored") & 7;
-            life.enemyHp = bounded(json.optInt("enemyHp"), 72);
+            life.duelRival = Life.Rival.values()[bounded(json.optInt("duelRival"), Life.Rival.values().length - 1)];
+            life.challengerWins = Math.max(0, json.optInt("challengerWins"));
+            life.resolvedEvent = Math.max(-1, Math.min(life.season, json.optInt("resolvedEvent", -1)));
+            life.enemyHp = bounded(json.optInt("enemyHp"), life.duelRival.hp);
             life.round = Math.max(0, json.optInt("round"));
             life.duelLog = json.optString("duelLog");
             int eyeMask = (1 << EyePower.values().length) - 1;
@@ -90,13 +93,25 @@ final class SaveGame {
                 life.romanceLastVisit[i] = visits == null ? (i < 4 && (oldVisits & (1 << i)) != 0 ? life.season + 1 : 0)
                         : bounded(visits.optInt(i), life.season + 1);
             }
+            life.aptitude = Life.Aptitude.values()[bounded(json.optInt("aptitude"), Life.Aptitude.values().length - 1)];
+            life.variedContacts = json.optBoolean("variedContacts");
+            life.childhoodActions = json.optInt("childhoodActions") & 15;
+            life.clanPractice = bounded(json.optInt("clanPractice"), 1000);
+            life.guardianTurns = bounded(json.optInt("guardianTurns"), 2);
+            life.sealTurns = bounded(json.optInt("sealTurns"), 2);
+            JSONArray trials = json.optJSONArray("eyeTrials");
+            if (trials != null) for (int i = 0; i < life.eyeTrials.length; i++) {
+                life.eyeTrials[i] = bounded(trials.optInt(i), 100);
+            }
             life.burnTurns = bounded(json.optInt("burnTurns"), 2);
             life.observedMove = json.optInt("observedMove");
-            if (life.observedMove != 10 && life.observedMove != 18) life.observedMove = 0;
+            if (life.observedMove != life.duelRival.light && life.observedMove != life.duelRival.heavy) life.observedMove = 0;
             life.bindUsed = json.optBoolean("bindUsed");
             EyePower oldEye = life.clan().eye();
             int legacyEye = oldEye != null && oldEye != EyePower.FARWATCH ? oldEye.mask() : 0;
             life.awakenedEyes = json.optInt("awakenedEyes", json.optBoolean("eyeAwakened") ? legacyEye : 0) & life.heritageEyes();
+            life.evolvedEyes = json.optInt("evolvedEyes") & life.awakenedEyes;
+            life.usedForms = json.optInt("usedForms") & life.evolvedEyes;
             life.usedEyes = json.optInt("usedEyes", json.optBoolean("eyeUsed") ? legacyEye : 0) & life.awakenedEyes;
             life.scoutedMissions = json.optInt("scoutedMissions", life.completed);
             int summonMask = (1 << Summon.ALL.length) - 1;
@@ -172,6 +187,9 @@ final class SaveGame {
             json.put("meditated", life.meditated);
             json.put("gifted", life.gifted);
             json.put("favored", life.favored);
+            json.put("duelRival", life.duelRival.ordinal());
+            json.put("challengerWins", life.challengerWins);
+            json.put("resolvedEvent", life.resolvedEvent);
             json.put("enemyHp", life.enemyHp);
             json.put("round", life.round);
             json.put("duelLog", life.duelLog);
@@ -201,6 +219,15 @@ final class SaveGame {
             }
             json.put("children", children);
             json.put("affection", new JSONArray(life.affection));
+            json.put("aptitude", life.aptitude.ordinal());
+            json.put("variedContacts", life.variedContacts);
+            json.put("childhoodActions", life.childhoodActions);
+            json.put("clanPractice", life.clanPractice);
+            json.put("evolvedEyes", life.evolvedEyes);
+            json.put("usedForms", life.usedForms);
+            json.put("guardianTurns", life.guardianTurns);
+            json.put("sealTurns", life.sealTurns);
+            json.put("eyeTrials", new JSONArray(life.eyeTrials));
             json.put("burnTurns", life.burnTurns);
             json.put("observedMove", life.observedMove);
             json.put("bindUsed", life.bindUsed);

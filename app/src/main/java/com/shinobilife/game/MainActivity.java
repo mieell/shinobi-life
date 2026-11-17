@@ -57,7 +57,9 @@ public final class MainActivity extends Activity {
     private static final int[][] CONTACT_STYLE = {
         {4, 1, 2, 1, 4, 0, 1}, {2, 3, 3, 4, 2, 0, 4}, {3, 2, 4, 3, 5, 1, 5}
     };
-    private static final int[] RIVAL_STYLE = {5, 1, 2, 4, 6, 3, 4};
+    private static final int[][] RIVAL_STYLE = {{5, 1, 2, 4, 6, 3, 4}, {3, 2, 3, 3, 2, 0, 0}, {6, 4, 1, 4, 5, 0, 2}};
+    private final android.util.SparseArray<android.graphics.drawable.Drawable.ConstantState> artworkCache = new android.util.SparseArray<>();
+    private int oldPlayerHp = -1, oldRivalHp = -1;
 
     private Life life;
     private String page = "title";
@@ -72,16 +74,16 @@ public final class MainActivity extends Activity {
             {3, 4, 4, 2, 3, 0, 0}, {4, 1, 0, 4, 1, 0, 0}
     };
     private int journalLimit = JOURNAL_BATCH, residentLimit = 16;
-    private boolean editingOrigin, wardrobeMode;
+    private boolean editingOrigin, wardrobeMode, viewingDuelCircuit, residentDirectory;
     private EyePower previewEye;
     private Draft draft;
     private Portrait editorPortrait;
     private final java.util.ArrayList<Portrait> appearancePreviews = new java.util.ArrayList<>();
 
     private static final class Draft {
-        String name = "Ren";
-        int village = 3, gender, presence = 1;
-        int[] style = {0, 0, 0, 2, 0, 0, 4};
+        String name = Life.randomName(new Random());
+        int village = 3, gender, presence = 1, start;
+        int[] style = {0, 0, 0, 2, 0, 0, 4, 0, 0, 0};
     }
 
     @Override public void onCreate(Bundle saved) {
@@ -89,7 +91,7 @@ public final class MainActivity extends Activity {
         life = SaveGame.read(this);
         if (life == null) {
             Draft starter = new Draft();
-            life = Life.rollNewLife(starter.name, starter.village, starter.gender, starter.presence, starter.style, new Random());
+            life = Life.rollNewLife(starter.name, starter.village, starter.gender, starter.presence, starter.style, Life.START_AGES[starter.start], new Random());
             SaveGame.write(this, life);
         }
         page = life.deceased ? "legacy" : life.enemyHp > 0 ? "duel" : "title";
@@ -127,9 +129,9 @@ public final class MainActivity extends Activity {
             case "detail" -> go("clans");
             case "clans" -> go(returnPage.equals("title") ? "title" : "life");
             case "career" -> go("village");
-            case "academy", "council" -> go("life");
-            case "person", "romance" -> go("people");
-            case "date" -> go("romance");
+            case "academy", "council", "season-event" -> go("life");
+            case "person", "romance", "residents" -> go("people");
+            case "date" -> go(residentDirectory ? "residents" : "romance");
             case "family" -> go("people");
             case "legacy" -> go("title");
             case "create" -> {
@@ -143,6 +145,20 @@ public final class MainActivity extends Activity {
     }
 
     private void go(String next) {
+        if (next.equals("romance") && life.age() < Life.ADULT_AGE) {
+            message("Romance opens at age 18.");
+            return;
+        }
+        if (life.age() < Life.SHINOBI_AGE && (next.equals("missions") || next.equals("summons"))) {
+            message("Available from age 15.");
+            return;
+        }
+        if (next.equals("residents") && life.age() < 3) {
+            message("You can meet village residents at age 3.");
+            return;
+        }
+        if (next.equals("residents")) residentDirectory = true;
+        else if (next.equals("romance")) residentDirectory = false;
         page = next;
         if (next.equals("life")) journalLimit = JOURNAL_BATCH;
         if (next.equals("romance") && selectedInterest == null) residentLimit = 16;
@@ -168,7 +184,14 @@ public final class MainActivity extends Activity {
 
     private void update() {
         SaveGame.write(this, life);
-        refreshBody();
+        if (!page.equals("duel")) {
+            refreshBody();
+            return;
+        }
+        int at = scroll.getScrollY();
+        body.removeViews(2, body.getChildCount() - 2);
+        duelRound();
+        restoreScroll(at);
     }
 
     private void refreshBody() {
@@ -239,6 +262,7 @@ public final class MainActivity extends Activity {
             case "village" -> villagePage();
             case "career" -> careerPage();
             case "academy" -> academyPage();
+            case "season-event" -> seasonEventPage();
             case "council" -> councilPage();
             case "missions" -> missionsPage();
             case "clans" -> clansPage();
@@ -246,7 +270,7 @@ public final class MainActivity extends Activity {
             case "summons" -> summonsPage();
             case "people" -> peoplePage();
             case "person" -> personPage();
-            case "romance" -> romancePage();
+            case "romance", "residents" -> romancePage();
             case "date" -> datePage();
             case "family", "legacy" -> familyPage();
             case "create" -> createPage();
@@ -386,7 +410,7 @@ public final class MainActivity extends Activity {
         gap(saveCard, 12);
 
         String ctaLabel = life.enemyHp > 0
-                ? "Resume Cedar Pass Duel  ›"
+                ? "Resume " + life.duelRival.arena + " Duel  ›"
                 : "Continue as " + displayName(life.name, life.clan) + "  ›";
         buttonIn(saveCard, ctaLabel, Color.WHITE, RED, () -> go(life.enemyHp > 0 ? "duel" : "life"));
         body.addView(saveCard);
@@ -524,6 +548,7 @@ public final class MainActivity extends Activity {
         LinearLayout card = row();
         Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5, "Portrait of " + life.name,
                 life.portraitEye());
+        portrait.setBloodlineVisuals(life.hasEvolved(life.portraitEye()), false);
         card.addView(portrait, new LinearLayout.LayoutParams(dp(86), dp(86)));
         LinearLayout info = column();
         inset(info, 12, 0, 0, 0);
@@ -536,11 +561,12 @@ public final class MainActivity extends Activity {
         info.addView(titleRow);
         info.addView(text(life.village() + " · " + life.rank(), 13, LIGHT_TEXT, MEDIUM));
         info.addView(text(Life.GENDERS[life.gender] + " · " + Life.FAMILIES[life.family], 12, LIGHT_TEXT, MEDIUM));
+        if (life.aptitude != Life.Aptitude.NONE) info.addView(text(life.aptitude.title, 12, LIGHT_TEXT, MEDIUM));
         gap(info, 6);
         LinearLayout quickStats = row();
         addHeroBadge(quickStats, "Coins", money(life.get(Stat.COINS)), true);
         addHeroBadge(quickStats, "Skill", Integer.toString(life.get(Stat.SKILL)), true);
-        addHeroBadge(quickStats, "Wins", Integer.toString(life.victories), true);
+        addHeroBadge(quickStats, "Wins", Integer.toString(life.victories + life.challengerWins), true);
         addHeroBadge(quickStats, "Pacts", life.signedSummonCount() + "/" + Summon.ALL.length, false);
         info.addView(quickStats);
         card.addView(info, new LinearLayout.LayoutParams(0, WRAP, 1));
@@ -562,9 +588,18 @@ public final class MainActivity extends Activity {
         body.addView(meters);
         gap(body, 9);
 
-        if (!life.journal.isEmpty()) {
+        if (life.hasSeasonEvent()) {
+            seasonEventBanner();
+            gap(body, 10);
+        } else if (!life.journal.isEmpty()) {
             latestEvent(life.journal.get(0));
             gap(body, 9);
+        }
+
+        if (life.age() < Life.SHINOBI_AGE) {
+            childhoodPanel();
+            lifeJournal();
+            return;
         }
 
         LinearLayout actions = row();
@@ -577,7 +612,7 @@ public final class MainActivity extends Activity {
             else update();
         });
         quick(actions, "Style", life.styled ? "Wardrobe" : "35 / Free", "wardrobe", this::openStyleMenu);
-        quick(actions, "Work", life.worked ? "Done" : "+" + life.workPay() + " Coin", "coin", () -> {
+        if (life.age() >= Life.ADULT_AGE) quick(actions, "Work", life.worked ? "Done" : "+" + life.workPay() + " Coin", "coin", () -> {
             if (!life.work()) message(life.worked ? "You already worked this season." : "You need 12 stamina.");
             else update();
         });
@@ -587,7 +622,7 @@ public final class MainActivity extends Activity {
         });
         body.addView(actions);
         gap(body, 8);
-        buttonIn(body, "Activities & travel", RED, BLUSH, () -> go("village"));
+        if (life.age() >= Life.ADULT_AGE) buttonIn(body, "Activities & travel", RED, BLUSH, () -> go("village"));
         gap(body, 7);
         LinearLayout offices = row();
         offices.addView(button("Academy", RED, WHITE, BORDER, () -> go("academy")),
@@ -598,13 +633,26 @@ public final class MainActivity extends Activity {
                 RED, WHITE, BORDER, () -> go("council")), council);
         body.addView(offices);
 
+        gap(body, 9);
+        CombatArt currentArt = life.clanArt();
+        fact("Clan technique · " + currentArt.name(), currentArt.description() + " "
+                + life.clanPractice + " duel uses. Refined at 6 uses and 22 Skill. Mastered at 15 uses and 35 Skill.");
         for (EyePower eye : EyePower.values()) {
             if ((life.heritageEyes() & eye.mask()) == 0) continue;
             gap(body, 10);
             LinearLayout bloodline = card(LILAC, 12);
-            bloodline.addView(text(eye.title, 19, INK, DISPLAY));
+            bloodline.addView(text(life.hasEvolved(eye) ? eye.evolution : eye.title, 19, INK, DISPLAY));
             if ((life.awakenedEyes & eye.mask()) != 0) {
-                bloodline.addView(text("Awakened · " + eye.move + " (" + eye.description() + ")", 13, PURPLE, MEDIUM));
+                bloodline.addView(text("Awakened · " + eye.move + (life.hasEvolved(eye) ? " · +6 damage" : ""), 13, PURPLE, MEDIUM));
+                if (life.hasEvolved(eye)) {
+                    bloodline.addView(text(eye.manifestation + " · " + eye.formEffect + " Requires 45 Skill and 2 circuit wins beyond Cedar Pass.", 13, INK, BODY));
+                } else {
+                    bloodline.addView(text(eye.evolution + " requires 35 Skill and 3 uses of this eye (" +
+                            life.eyeTrials[eye.ordinal()] + "/3).", 13, MUTED, BODY));
+                    if (life.canEvolve(eye)) buttonIn(bloodline, "Evolve to " + eye.evolution, PURPLE, WHITE, () -> {
+                        if (life.evolve(eye)) update();
+                    });
+                }
             } else {
                 String progress = "Skill " + life.get(Stat.SKILL) + "/" + eye.skill
                         + (eye.wins > 0 ? " · Cedar Pass wins " + life.victories + "/" + eye.wins : "");
@@ -619,11 +667,31 @@ public final class MainActivity extends Activity {
             body.addView(bloodline);
         }
 
-        if (life.journal.size() > 1) {
+        lifeJournal();
+    }
+
+    private void childhoodPanel() {
+        fact(life.age() < 6 ? "Growing up" : "Academy years", life.age() < 6
+                ? "Spend time with family. Academy classes open at age 6."
+                : "Gain Skill and academy credits before the mission board opens at 15.");
+        for (Life.ChildhoodAction action : Life.ChildhoodAction.values()) {
+            if (life.age() < action.age || (life.childhoodActions & action.mask()) != 0) continue;
+            buttonIn(body, action.title + " · " + action.result, RED, BLUSH, () -> {
+                if (life.childhoodAction(action)) update();
+                else message("This activity requires 8 stamina.");
+            });
+            gap(body, 6);
+        }
+        if (life.age() >= 6) buttonIn(body, "Academy", RED, WHITE, () -> go("academy"));
+    }
+
+    private void lifeJournal() {
+        int firstEntry = life.hasSeasonEvent() ? 0 : 1;
+        if (life.journal.size() > firstEntry) {
             gap(body, 16);
             body.addView(text("Life journal", 23, INK, DISPLAY));
             gap(body, 8);
-            appendJournal(1);
+            appendJournal(firstEntry);
         }
     }
 
@@ -651,6 +719,47 @@ public final class MainActivity extends Activity {
             });
         }
         dialog.show();
+    }
+
+    private void seasonEventBanner() {
+        Life.SeasonEvent event = life.seasonalEvent();
+        LinearLayout panel = row();
+        inset(panel, 12, 12, 12, 12);
+        ImageView letter = artwork(R.drawable.academy_letter);
+        letter.setBackground(box(WHITE, null, 9));
+        letter.setClipToOutline(true);
+        panel.addView(letter, new LinearLayout.LayoutParams(dp(64), dp(74)));
+        LinearLayout copy = column();
+        inset(copy, 11, 0, 6, 0);
+        copy.addView(text(event.title, 18, INK, DISPLAY));
+        gap(copy, 4);
+        copy.addView(text("Make a seasonal choice", 13, RED, MEDIUM));
+        panel.addView(copy, new LinearLayout.LayoutParams(0, WRAP, 1));
+        panel.addView(text("›", 25, RED, DISPLAY));
+        clickable(panel, WHITE, BORDER, () -> go("season-event"));
+        body.addView(panel);
+    }
+
+    private void seasonEventPage() {
+        Life.SeasonEvent event = life.seasonalEvent();
+        heading(event.title, life.village() + " · " + life.date());
+        TextView narrative = text(event.situation, 17, INK, BODY);
+        inset(narrative, 4, 4, 4, 6);
+        body.addView(narrative);
+        gap(body, 10);
+        for (int i = 0; i < event.choices.length; i++) {
+            int choice = i;
+            Life.SeasonChoice option = event.choices[i];
+            body.addView(text(option.terms(), 14, MUTED, MEDIUM));
+            gap(body, 4);
+            buttonIn(body, option.title(), Color.WHITE, RED, () -> {
+                if (life.resolveSeasonEvent(choice)) {
+                    SaveGame.write(this, life);
+                    go("life");
+                } else message("Requires " + option.price() + " " + option.priceStat().label + ".");
+            });
+            gap(body, 13);
+        }
     }
 
     private void latestEvent(Life.Event event) {
@@ -729,7 +838,7 @@ public final class MainActivity extends Activity {
         heading("Activities", life.village() + " · " + life.date() + " · " + life.get(Stat.STAMINA) + " stamina");
         buttonIn(body, "Career · " + life.career.title, RED, BLUSH, () -> go("career"));
         gap(body, 7);
-        buttonIn(body, "Meet village residents", PURPLE, LILAC, () -> go("romance"));
+        buttonIn(body, "Meet village residents", PURPLE, LILAC, () -> go("residents"));
         gap(body, 7);
         buttonIn(body, "Travel · 20 coins and 12 stamina", Color.WHITE, RED, () -> {
             new AlertDialog.Builder(this).setTitle("Choose a destination").setItems(Life.VILLAGES, (dialog, which) -> {
@@ -764,9 +873,12 @@ public final class MainActivity extends Activity {
     }
 
     private void academyPage() {
-        heading(life.village() + " Academy", life.academyRank.title + " · " + life.academyCredits + " class credits");
+        heading(life.village() + " Academy", life.rank() + " · " + life.academyCredits + " class credits");
+        boolean student = life.age() < Life.SHINOBI_AGE;
         Life.AcademyRank next = life.nextRank();
-        if (next != null) {
+        if (student) {
+            fact("Academy student", "Attend classes to build Skill. You'll become a Genin at age 15.");
+        } else if (next != null) {
             fact(next.title + " exam", life.examRequirements() + ". You have " + life.academyCredits + " credits, "
                     + life.get(Stat.SKILL) + " Skill, and " + life.victories + " duel wins.");
             if (life.canTakeExam()) {
@@ -780,7 +892,8 @@ public final class MainActivity extends Activity {
             body.addView(pill("Class attended this season", GREEN, MINT));
             return;
         }
-        body.addView(text(next == null ? "Jōnin classes" : next.title + " preparation", 20, INK, DISPLAY));
+        String classes = student ? "Academy classes" : next == null ? "Jōnin classes" : next.title + " preparation";
+        body.addView(text(classes, 20, INK, DISPLAY));
         gap(body, 7);
         for (Life.Lesson lesson : Life.Lesson.values()) {
             LinearLayout card = card(WHITE, 13);
@@ -894,7 +1007,17 @@ public final class MainActivity extends Activity {
 
     private void missionsPage() {
         heading("Mission board", life.village() + " · " + life.date());
+        LinearLayout tabs = row();
+        boardTab(tabs, "Assignments", false);
+        boardTab(tabs, "Duel circuit", true);
+        body.addView(tabs);
+        gap(body, 11);
+        if (viewingDuelCircuit) {
+            arenaBoard();
+            return;
+        }
         for (Missions mission : Missions.values()) {
+            if (mission == Missions.DUEL) continue;
             LinearLayout card = card(WHITE, 14);
             LinearLayout topRow = row();
             topRow.addView(text(mission.role.label + (life.matches(mission) ? " · Your specialty" : ""), 12, RED, MEDIUM),
@@ -917,7 +1040,7 @@ public final class MainActivity extends Activity {
             else if (!life.canStart(mission)) {
                 card.addView(pill(life.get(Stat.STAMINA) < mission.stamina ? "Low stamina" : "Needs 30 health", RED, BLUSH));
             } else {
-                buttonIn(card, mission == Missions.DUEL ? "Enter duel" : mission == Missions.CARAVAN ? "Choose escort route" : "Take assignment", RED, BLUSH, () -> {
+                buttonIn(card, mission == Missions.CARAVAN ? "Choose escort route" : "Take assignment", RED, BLUSH, () -> {
                     if (mission == Missions.CARAVAN) escortRoutes();
                     else take(mission, false);
                 });
@@ -941,6 +1064,43 @@ public final class MainActivity extends Activity {
             body.addView(card);
             gap(body, 9);
         }
+    }
+
+    private void boardTab(LinearLayout tabs, String name, boolean circuit) {
+        boolean selected = viewingDuelCircuit == circuit;
+        Button tab = button(name, selected ? Color.WHITE : INK, selected ? RED : WHITE, selected ? null : BORDER, () -> {
+            if (viewingDuelCircuit == circuit) return;
+            viewingDuelCircuit = circuit;
+            scroll.scrollTo(0, 0);
+            refreshBody();
+        });
+        tab.setSelected(selected);
+        LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(0, WRAP, 1);
+        if (circuit) size.setMarginStart(dp(7));
+        tabs.addView(tab, size);
+    }
+
+    private void arenaBoard() {
+        LinearLayout card = card(WHITE, 14);
+        card.addView(text("24 stamina · One match per season", 13, MUTED, MEDIUM));
+        gap(card, 8);
+        for (Life.Rival rival : Life.Rival.values()) {
+            card.addView(text(rival.arena + " · " + rival.name, 16, INK, DISPLAY));
+            card.addView(text(rival.description + " " + rival.hp + " HP · +" + rival.fame + " Fame · "
+                    + rival.coins + " coins.", 13, MUTED, BODY));
+            gap(card, 4);
+            if (life.isComplete(Missions.DUEL)) card.addView(pill("Match used this season", MUTED, PAPER));
+            else if (life.academyRank.ordinal() < rival.rank.ordinal()) card.addView(pill("Requires " + rival.rank.title, MUTED, PAPER));
+            else if (!life.canStart(Missions.DUEL)) card.addView(pill("Needs 24 stamina and 30 Health", RED, BLUSH));
+            else buttonIn(card, "Challenge " + rival.name, RED, BLUSH, () -> {
+                if (!life.enterDuel(rival)) return;
+                SaveGame.write(this, life);
+                go("duel");
+            });
+            gap(card, 8);
+        }
+        body.addView(card);
+        gap(body, 14);
     }
 
     private void escortRoutes() {
@@ -988,16 +1148,22 @@ public final class MainActivity extends Activity {
     }
 
     private void duelPage() {
-        heading("Cedar Pass", "Public duel · Ibara Kase");
+        heading(life.duelRival.arena, "Public duel · " + life.duelRival.name);
+        duelRound();
+    }
+
+    private void duelRound() {
+        Life.Rival rival = life.duelRival;
         LinearLayout arena = row();
         arena.addView(fighter(life.name, life.style, life.age(), LILAC, life.get(Stat.HEALTH), 100,
-                life.get(Stat.CHAKRA), life.portraitEye()), new LinearLayout.LayoutParams(0, WRAP, 1));
+                life.get(Stat.CHAKRA), life.portraitEye(), oldPlayerHp), new LinearLayout.LayoutParams(0, WRAP, 1));
         TextView vs = text("VS", 16, RED, DISPLAY);
         inset(vs, 8, 0, 8, 0);
         arena.addView(vs);
-        arena.addView(fighter("Ibara", RIVAL_STYLE, 27, BLUSH, life.enemyHp, 72, -1, null),
+        arena.addView(fighter(rival.name, RIVAL_STYLE[rival.ordinal()], 27, BLUSH, life.enemyHp, rival.hp, -1, null, oldRivalHp),
                 new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(arena);
+        oldPlayerHp = oldRivalHp = -1;
         gap(body, 10);
 
         LinearLayout log = card(MINT, 14);
@@ -1005,8 +1171,8 @@ public final class MainActivity extends Activity {
         logHead.addView(text(life.enemyHp > 0 ? "Round " + life.round + " · " + life.get(Stat.CHAKRA) + " chakra" : "Match ended",
                 14, GREEN, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
         if (life.enemyHp > 0) {
-            boolean heavy = life.incomingDamage() == 18;
-            logHead.addView(pill((heavy ? "Cedar Breaker · 18 dmg" : "Stone Jab · 10 dmg"),
+            boolean heavy = life.incomingDamage() == rival.heavy;
+            logHead.addView(pill(rival.attackName(life.incomingDamage()) + " · " + life.incomingDamage() + " dmg",
                     heavy ? RED : MUTED, heavy ? BLUSH : WHITE));
         }
         log.addView(logHead);
@@ -1015,11 +1181,6 @@ public final class MainActivity extends Activity {
         if (life.enemyHp > 0 && life.burnTurns > 0) {
             gap(log, 4);
             log.addView(text("Burn active: 5 fire damage next turn", 13, RED, MEDIUM));
-        }
-        if (life.enemyHp > 0 && (life.awakenedEyes & (EyePower.SPARKGLASS.mask() | EyePower.FARWATCH.mask())) != 0) {
-            gap(log, 4);
-            log.addView(text("Your eye reads " + (life.incomingDamage() == 18 ? "Cedar Breaker" : "Stone Jab")
-                    + " next · " + life.incomingDamage() + " base damage", 13, PURPLE, MEDIUM));
         }
         log.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         body.addView(log);
@@ -1031,18 +1192,27 @@ public final class MainActivity extends Activity {
         }
         duelButton("Strike · " + life.strikeDamage() + " damage", Life.Move.STRIKE, Color.WHITE, RED);
         duelButton("Guard · Recover 8 chakra (reduces counter to 3)", Life.Move.GUARD, GREEN, MINT);
-        CombatArt art = CombatArt.forClan(life.clan());
+        CombatArt art = life.clanArt();
         duelArt(art.name(), art.description(), life.artDuelBlocker(art), Life.Move.TECHNIQUE);
         for (EyePower eye : EyePower.values()) {
             if ((life.awakenedEyes & eye.mask()) == 0) continue;
             String blocker = life.eyeDuelBlocker(eye);
             if (blocker.isEmpty()) {
-                body.addView(text(eye.damage(life.observedMove) + " damage · " + eye.chakra + " chakra · Stops the counter", 13, PURPLE, MEDIUM));
+                body.addView(text(life.eyeDamage(eye) + " damage · " + eye.chakra + " chakra · Stops the counter", 13, PURPLE, MEDIUM));
                 buttonIn(body, eye.move, PURPLE, LILAC, () -> {
-                    if (life.castEye(eye)) update();
+                    performDuelMove(() -> life.castEye(eye));
                 });
             } else body.addView(pill(eye.move + " · " + blocker, MUTED, PAPER));
             gap(body, 7);
+            if (life.hasEvolved(eye)) {
+                String formBlocker = life.manifestationBlocker(eye);
+                if (formBlocker.isEmpty()) {
+                    body.addView(text(eye.formDamage + " damage · " + eye.formChakra + " chakra · " + eye.formEffect, 13, PURPLE, MEDIUM));
+                    buttonIn(body, eye.manifestation, Color.WHITE, RED, () ->
+                            performDuelMove(() -> life.castManifestation(eye)));
+                } else body.addView(pill(eye.manifestation + " · " + formBlocker, MUTED, PAPER));
+                gap(body, 7);
+            }
         }
         java.util.ArrayList<Summon> available = new java.util.ArrayList<>();
         boolean hasPact = false;
@@ -1065,36 +1235,50 @@ public final class MainActivity extends Activity {
         buttonIn(body, "Concede match", MUTED, WHITE, this::handleBack);
     }
 
-    private LinearLayout fighter(String name, int[] style, int age, int color, int hp, int max, int chakra, EyePower eye) {
+    private LinearLayout fighter(String name, int[] style, int age, int color, int hp, int max, int chakra, EyePower eye, int previousHp) {
         LinearLayout card = card(color, 10);
         card.setGravity(Gravity.CENTER);
-        card.addView(new Portrait(this, style, age, color == LILAC ? 0xFFD9C7E9 : 0xFFE7C3B0, name, eye),
-                new LinearLayout.LayoutParams(dp(78), dp(78)));
+        Portrait figure = new Portrait(this, style, age, color == LILAC ? 0xFFD9C7E9 : 0xFFE7C3B0, name, eye);
+        if (chakra >= 0) figure.setBloodlineVisuals(life.hasEvolved(eye), life.guardianTurns > 0 && life.enemyHp > 0);
+        card.addView(figure, new LinearLayout.LayoutParams(dp(78), dp(78)));
         TextView label = text(name, 19, INK, DISPLAY);
         label.setGravity(Gravity.CENTER);
         card.addView(label);
-        card.addView(text(hp + "/" + max + " HP", 13, GREEN, MEDIUM));
+        String change = previousHp >= 0 && previousHp != hp ? " · " + (hp > previousHp ? "+" : "−") + Math.abs(hp - previousHp) : "";
+        card.addView(text(hp + "/" + max + " HP" + change, 13, hp * 3 <= max ? RED : GREEN, MEDIUM));
         gap(card, 4);
-        card.addView(progress(hp * 100 / max, GREEN));
+        MeterView hpBar = new MeterView(hp * 100 / max, hp * 3 <= max ? RED : GREEN);
+        card.addView(hpBar);
+        if (previousHp >= 0 && previousHp != hp && (Build.VERSION.SDK_INT < 26 || android.animation.ValueAnimator.areAnimatorsEnabled())) {
+            hpBar.transition(previousHp * 100 / max, hp * 100 / max);
+        }
         if (chakra >= 0) {
             gap(card, 5);
             card.addView(text(chakra + "/100 Chakra", 12, PURPLE, MEDIUM));
             gap(card, 3);
             card.addView(progress(chakra, PURPLE));
-        } else {
-            gap(card, 5);
-            boolean heavy = life.incomingDamage() == 18;
-            card.addView(text("Next: " + (heavy ? "Cedar Breaker" : "Stone Jab"), 12, heavy ? RED : MUTED, MEDIUM));
-            gap(card, 3);
-            card.addView(progress(life.incomingDamage() * 100 / 18, heavy ? RED : AMBER));
         }
         return card;
     }
 
+    private void performDuelMove(java.util.function.BooleanSupplier move) {
+        int health = life.get(Stat.HEALTH);
+        int rivalHealth = life.enemyHp;
+        if (!move.getAsBoolean()) {
+            message("This move is unavailable.");
+            return;
+        }
+        oldPlayerHp = health;
+        oldRivalHp = rivalHealth;
+        if (health != life.get(Stat.HEALTH) || rivalHealth != life.enemyHp) {
+            body.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+        }
+        update();
+    }
+
     private void duelButton(String label, Life.Move move, int color, int fill) {
         buttonIn(body, label, color, fill, () -> {
-            if (!life.duel(move)) message("This move is unavailable.");
-            else update();
+            performDuelMove(() -> life.duel(move));
         });
         gap(body, 7);
     }
@@ -1116,8 +1300,7 @@ public final class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this).setTitle("Call a summon · " + Summon.DUEL_CHAKRA + " chakra")
                 .setItems(labels, (dialog, which) -> {
-                    if (life.callInDuel(summons.get(which))) update();
-                    else message("This summon is unavailable.");
+                    performDuelMove(() -> life.callInDuel(summons.get(which)));
                 }).setNegativeButton("Cancel", null).show();
     }
 
@@ -1281,11 +1464,13 @@ public final class MainActivity extends Activity {
         heading("Relationships", "Spend time, offer gifts, and unlock ally favors at 60 Trust.");
         String relationship = life.partner < 0 ? "Meet someone" : life.residents()[life.partner].name
                 + (life.married ? " · Spouse" : " · Partner");
-        buttonIn(body, "Romance · " + relationship, Color.WHITE, RED, () -> go("romance"));
+        if (life.age() >= Life.ADULT_AGE) buttonIn(body, "Romance · " + relationship, Color.WHITE, RED, () -> go("romance"));
+        if (life.age() >= 3) buttonIn(body, "Village residents", RED, WHITE, () -> go("residents"));
         gap(body, 7);
         buttonIn(body, "Family & lineage", PURPLE, LILAC, () -> go("family"));
         gap(body, 9);
         for (int i = 0; i < Life.CONTACTS.length; i++) {
+            if (!life.knowsContact(i)) continue;
             int contact = i;
             LinearLayout item = row();
             inset(item, 12, 9, 12, 9);
@@ -1296,7 +1481,7 @@ public final class MainActivity extends Activity {
             top.addView(text(life.contactName(i), 20, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
             top.addView(pill(Life.trustTier(life.bonds[i]), GREEN, MINT));
             info.addView(top);
-            info.addView(text(Life.ROLES[i] + " · Age " + contactAge(i), 13, MUTED, MEDIUM));
+            info.addView(text(Life.ROLES[i] + " · Age " + life.contactAge(i), 13, MUTED, MEDIUM));
             gap(info, 4);
             info.addView(text(life.bonds[i] + " / 100 Trust"
                     + (life.canAllyFavor(i) ? " · Favor ready" : ""), 12, GREEN, MEDIUM));
@@ -1315,7 +1500,7 @@ public final class MainActivity extends Activity {
 
     private Portrait romancePortrait(Life.Interest interest) {
         int[] appearance;
-        if (interest.id < ROMANCE_STYLE.length && life.generation == 1) {
+        if (interest.id < ROMANCE_STYLE.length && life.generation == 1 && !life.variedContacts) {
             appearance = ROMANCE_STYLE[interest.id];
         } else {
             Random random = new Random(life.worldSeed ^ (interest.id * 0x9e3779b97f4a7c15L));
@@ -1327,7 +1512,7 @@ public final class MainActivity extends Activity {
     }
 
     private void romancePage() {
-        heading("People in " + life.village(), "Get to know local residents, meet old friends, or ask someone out.");
+        heading("People in " + life.village(), residentDirectory ? "Meet your neighbors and get to know their stories." : "Get to know local residents, meet old friends, or ask someone out.");
         int shown = 0;
         for (Life.Interest interest : life.residents()) {
             if (interest.village >= 0 && interest.village != life.village && !life.isPartner(interest)
@@ -1346,7 +1531,7 @@ public final class MainActivity extends Activity {
             inset(copy, 10, 0, 7, 0);
             copy.addView(text(interest.name, 20, INK, DISPLAY));
             copy.addView(text(interest.gender + " · Age " + life.residentAge(interest) + " · " + Clans.ALL[interest.clan].name(), 13, MUTED, BODY));
-            copy.addView(text(life.romanceStatus(interest) + " · " + life.affection(interest) + "/100 Affection", 13, RED, MEDIUM));
+            copy.addView(text(life.romanceStatus(interest, residentDirectory) + " · " + life.affection(interest) + "/100 Affection", 13, RED, MEDIUM));
             item.addView(copy, new LinearLayout.LayoutParams(0, WRAP, 1));
             item.addView(text("›", 23, RED, BODY));
             clickable(item, WHITE, BORDER, () -> {
@@ -1366,7 +1551,7 @@ public final class MainActivity extends Activity {
         LinearLayout identity = column();
         inset(identity, 12, 0, 0, 0);
         identity.addView(text(interest.name, 27, Color.WHITE, DISPLAY));
-        identity.addView(text(life.romanceStatus(interest) + " · " + life.residentAge(interest) + " years old",
+        identity.addView(text(life.romanceStatus(interest, residentDirectory) + " · " + life.residentAge(interest) + " years old",
                 14, LIGHT_TEXT, MEDIUM));
         intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(scene(intro));
@@ -1377,14 +1562,16 @@ public final class MainActivity extends Activity {
         bond.addView(progress(life.affection(interest), RED));
         body.addView(bond);
         gap(body, 9);
-        fact("About " + interest.name, interest.about + " " + Clans.ALL[interest.clan].name() + " lineage.");
+        String background = life.residentAge(interest) < Life.ADULT_AGE ? "Grew up in " + life.village() + "." : interest.about;
+        fact("About " + interest.name, background + " " + Clans.ALL[interest.clan].name() + " lineage.");
         if (life.isPartner(interest)) {
             buttonIn(body, "Family & children", PURPLE, LILAC, () -> go("family"));
             gap(body, 8);
         }
-        boolean friendshipOnly = life.partner >= 0 && !life.isPartner(interest);
+        boolean friendshipOnly = residentDirectory || life.age() < Life.ADULT_AGE
+                || life.residentAge(interest) < Life.ADULT_AGE || (life.partner >= 0 && !life.isPartner(interest));
         if (friendshipOnly) {
-            body.addView(pill("Friendship · You are in an exclusive relationship", MUTED, PAPER));
+            body.addView(pill("Getting acquainted", MUTED, PAPER));
             gap(body, 8);
         }
         if (life.romanceVisited(interest)) {
@@ -1504,11 +1691,15 @@ public final class MainActivity extends Activity {
 
     private Portrait contactPortrait(int contact) {
         int[] hues = {0xFFE9CDBA, 0xFFCBDED2, 0xFFDFCEE9};
-        return new Portrait(this, CONTACT_STYLE[contact], contactAge(contact),
+        int[] style = CONTACT_STYLE[contact];
+        if (life.variedContacts) {
+            Random random = new Random(life.worldSeed + 71L * contact);
+            style = new int[Portrait.OPTIONS.length];
+            for (int i = 0; i < style.length; i++) style[i] = random.nextInt(Portrait.OPTIONS[i].length);
+        }
+        return new Portrait(this, style, life.contactAge(contact),
                 hues[contact], "Portrait of " + life.contactName(contact));
     }
-
-    private int contactAge(int contact) { return contact == 0 ? life.age() + 20 : life.age(); }
 
     private void personPage() {
         int contact = selectedContact;
@@ -1518,7 +1709,7 @@ public final class MainActivity extends Activity {
         LinearLayout identity = column();
         inset(identity, 12, 0, 0, 0);
         identity.addView(text(life.contactName(contact), 28, Color.WHITE, DISPLAY));
-        identity.addView(text(Life.ROLES[contact] + " · Age " + contactAge(contact) + " · " + Life.trustTier(life.bonds[contact]),
+        identity.addView(text(Life.ROLES[contact] + " · Age " + life.contactAge(contact) + " · " + Life.trustTier(life.bonds[contact]),
                 13, LIGHT_TEXT, MEDIUM));
         intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
         body.addView(scene(intro));
@@ -1531,12 +1722,7 @@ public final class MainActivity extends Activity {
         body.addView(trust);
         gap(body, 10);
 
-        String[] history = {
-            life.contactName(0) + " took you to lantern festivals when you were too small to carry your own.",
-            "You and Jun used to race home from academy drills. Jun still insists you cut corners.",
-            "Mika was your closest match in academy trials and still asks how your training is going."
-        };
-        fact(contact == 0 ? Life.FAMILIES[life.family] : "How you met", history[contact]);
+        fact(contact == 0 ? Life.FAMILIES[life.family] : "How you met", life.contactHistory(contact));
 
         if ((life.interacted & (1 << contact)) != 0) {
             body.addView(pill("You spent time together this season", GREEN, MINT));
@@ -1588,8 +1774,9 @@ public final class MainActivity extends Activity {
         inset(surround, 16, 8, 16, 0);
         LinearLayout preview = row();
         inset(preview, 12, 10, 12, 10);
-        editorPortrait = new Portrait(this, draft.style, wardrobeMode ? life.age() : 18, 0xFFEBCEB5,
+        editorPortrait = new Portrait(this, draft.style, wardrobeMode ? life.age() : Life.START_AGES[draft.start], 0xFFEBCEB5,
                 "Avatar preview", previewEye);
+        editorPortrait.setBloodlineVisuals(wardrobeMode && life.hasEvolved(previewEye), false);
         preview.addView(editorPortrait, new LinearLayout.LayoutParams(dp(106), dp(106)));
         LinearLayout control = column();
         inset(control, 12, 0, 0, 0);
@@ -1643,8 +1830,8 @@ public final class MainActivity extends Activity {
             return;
         }
         appearancePreviews.clear();
-        for (int i = 0; i < Portrait.LABELS.length; i++) {
-            appearanceField(i);
+        for (int slot : new int[]{0, 1, 2, 7, 8, 9, 3, 4, 5, 6}) {
+            appearanceField(slot);
             gap(body, 8);
         }
     }
@@ -1739,6 +1926,7 @@ public final class MainActivity extends Activity {
         });
         identity.addView(name, new LinearLayout.LayoutParams(MATCH, WRAP));
         gap(identity, 5);
+        choice(identity, "Starting age", Life.START_LABELS, draft.start, i -> draft.start = i);
         choice(identity, "Gender", Life.GENDERS, draft.gender, i -> draft.gender = i);
         choice(identity, "Birth village", Life.VILLAGES, draft.village, i -> draft.village = i);
         choice(identity, "Presence", Life.PRESENCE, draft.presence, i -> draft.presence = i);
@@ -1806,12 +1994,12 @@ public final class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this).setTitle("Begin life as " + name + "?")
                 .setMessage("Village: " + Life.VILLAGES[draft.village]
-                        + "\nYour clan and family will be rolled when you begin."
+                        + "\nStarting age: " + Life.START_LABELS[draft.start] + "\nYour clan and family will be rolled when you begin."
                         + "\n\nBeginning a new life replaces the current save on this device.")
                 .setNegativeButton("Keep current life", null)
                 .setPositiveButton("Begin life", (dialog, which) -> {
                     getSystemService(InputMethodManager.class).hideSoftInputFromWindow(body.getWindowToken(), 0);
-                    life = Life.rollNewLife(name, draft.village, draft.gender, draft.presence, draft.style, new Random());
+                    life = Life.rollNewLife(name, draft.village, draft.gender, draft.presence, draft.style, Life.START_AGES[draft.start], new Random());
                     SaveGame.write(this, life);
                     draft = null;
                     wardrobeMode = false;
@@ -1866,7 +2054,11 @@ public final class MainActivity extends Activity {
     private ImageView artwork(int asset) {
         ImageView art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        art.setImageResource(asset);
+        android.graphics.drawable.Drawable.ConstantState shared = artworkCache.get(asset);
+        if (shared == null) {
+            art.setImageResource(asset);
+            if (art.getDrawable() != null) artworkCache.put(asset, art.getDrawable().getConstantState());
+        } else art.setImageDrawable(shared.newDrawable(getResources()));
         art.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         return art;
     }
@@ -1899,20 +2091,47 @@ public final class MainActivity extends Activity {
         return meter;
     }
 
-    private View progress(int value, int color) {
-        View bar = new View(this) {
-            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            @Override protected void onDraw(Canvas canvas) {
-                float r = getHeight() / 2f;
-                paint.setColor(BORDER);
-                canvas.drawRoundRect(0, 0, getWidth(), getHeight(), r, r, paint);
-                paint.setColor(color);
-                if (value > 0) canvas.drawRoundRect(0, 0, getWidth() * Math.min(100, value) / 100f, getHeight(), r, r, paint);
-            }
-        };
-        bar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        bar.setLayoutParams(new LinearLayout.LayoutParams(MATCH, dp(5)));
-        return bar;
+    private View progress(int value, int color) { return new MeterView(value, color); }
+
+    private final class MeterView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int color;
+        private int value;
+        private android.animation.ValueAnimator animator;
+
+        MeterView(int value, int color) {
+            super(MainActivity.this);
+            this.value = value;
+            this.color = color;
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            setLayoutParams(new LinearLayout.LayoutParams(MATCH, dp(5)));
+        }
+
+        void transition(int from, int to) {
+            value = from;
+            animator = android.animation.ValueAnimator.ofInt(from, to);
+            animator.setDuration(190);
+            animator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+            animator.addUpdateListener(animation -> {
+                value = (int) animation.getAnimatedValue();
+                invalidate();
+            });
+            animator.start();
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            if (animator != null) animator.cancel();
+            super.onDetachedFromWindow();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            float radius = getHeight() / 2f;
+            paint.setColor(BORDER);
+            canvas.drawRoundRect(0, 0, getWidth(), getHeight(), radius, radius, paint);
+            paint.setColor(color);
+            if (value > 0) canvas.drawRoundRect(0, 0, getWidth() * Math.min(100, value) / 100f,
+                    getHeight(), radius, radius, paint);
+        }
     }
 
     private void quick(LinearLayout host, String label, String sub, String mark, Runnable run) {
