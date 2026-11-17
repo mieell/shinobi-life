@@ -221,11 +221,11 @@ public final class MainActivity extends Activity {
 
     private View header() {
         LinearLayout bar = row();
-        inset(bar, 16, 4, 12, 4);
+        inset(bar, 12, 3, 12, 3);
         bar.setBackgroundColor(NIGHT);
         if (!isTab() || chooseClan) {
-            Button back = button("‹", Color.WHITE, NIGHT_PANEL, null, this::handleBack);
-            back.setTextSize(26);
+            Button back = button("←", Color.WHITE, NIGHT, null, this::handleBack);
+            back.setTextSize(22);
             back.setContentDescription("Go back");
             bar.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         } else {
@@ -287,7 +287,7 @@ public final class MainActivity extends Activity {
         EyePower eye = life.clan().eye();
         Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5, "Portrait of " + life.name,
                 life.eyeAwakened ? eye : null);
-        card.addView(portrait, new LinearLayout.LayoutParams(dp(78), dp(78)));
+        card.addView(portrait, new LinearLayout.LayoutParams(dp(83), dp(83)));
         LinearLayout info = column();
         inset(info, 12, 0, 0, 0);
         info.addView(text(displayName(life.name, life.clan), 26, Color.WHITE, DISPLAY));
@@ -798,7 +798,7 @@ public final class MainActivity extends Activity {
         LinearLayout preview = row();
         inset(preview, 12, 10, 12, 10);
         editorPortrait = new Portrait(this, draft.style, 18, 0xFFEBCEB5, "Avatar preview");
-        preview.addView(editorPortrait, new LinearLayout.LayoutParams(dp(86), dp(86)));
+        preview.addView(editorPortrait, new LinearLayout.LayoutParams(dp(96), dp(96)));
         LinearLayout control = column();
         inset(control, 11, 0, 0, 0);
         control.addView(text("Create your shinobi", 21, Color.WHITE, DISPLAY));
