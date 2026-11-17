@@ -66,8 +66,13 @@ public final class MainActivity extends Activity {
     private LinearLayout body;
     private Role filter;
     private int selectedClan, selectedContact;
-    private int journalLimit = JOURNAL_BATCH;
-    private boolean chooseClan, editingOrigin, wardrobeMode;
+    private Life.Interest selectedInterest;
+    private static final int[][] ROMANCE_STYLE = {
+            {8, 3, 1, 1, 4, 0, 0}, {6, 0, 3, 3, 2, 1, 0},
+            {3, 4, 4, 2, 3, 0, 0}, {4, 1, 0, 4, 1, 0, 0}
+    };
+    private int journalLimit = JOURNAL_BATCH, residentLimit = 16;
+    private boolean editingOrigin, wardrobeMode;
     private EyePower previewEye;
     private Draft draft;
     private Portrait editorPortrait;
@@ -75,7 +80,7 @@ public final class MainActivity extends Activity {
 
     private static final class Draft {
         String name = "Ren";
-        int clan, village, presence = 1;
+        int village = 3, gender, presence = 1;
         int[] style = {0, 0, 0, 2, 0, 0, 4};
     }
 
@@ -84,10 +89,10 @@ public final class MainActivity extends Activity {
         life = SaveGame.read(this);
         if (life == null) {
             Draft starter = new Draft();
-            life = Life.begin(starter.name, starter.clan, starter.village, starter.presence, starter.style);
+            life = Life.rollNewLife(starter.name, starter.village, starter.gender, starter.presence, starter.style, new Random());
             SaveGame.write(this, life);
         }
-        page = life.enemyHp > 0 ? "duel" : "title";
+        page = life.deceased ? "legacy" : life.enemyHp > 0 ? "duel" : "title";
         if (Build.VERSION.SDK_INT >= 33) Back33.register(this, this::handleBack);
         render(0);
     }
@@ -120,13 +125,13 @@ public final class MainActivity extends Activity {
                 } else go("missions");
             }
             case "detail" -> go("clans");
-            case "clans" -> {
-                if (chooseClan) {
-                    chooseClan = false;
-                    go("create");
-                } else go(returnPage.equals("title") ? "title" : "life");
-            }
-            case "person" -> go("people");
+            case "clans" -> go(returnPage.equals("title") ? "title" : "life");
+            case "career" -> go("village");
+            case "academy", "council" -> go("life");
+            case "person", "romance" -> go("people");
+            case "date" -> go("romance");
+            case "family" -> go("people");
+            case "legacy" -> go("title");
             case "create" -> {
                 wardrobeMode = false;
                 go(returnPage.equals("title") ? "title" : "life");
@@ -140,6 +145,7 @@ public final class MainActivity extends Activity {
     private void go(String next) {
         page = next;
         if (next.equals("life")) journalLimit = JOURNAL_BATCH;
+        if (next.equals("romance") && selectedInterest == null) residentLimit = 16;
         render(0);
     }
 
@@ -150,11 +156,10 @@ public final class MainActivity extends Activity {
         returnPage = fromPage;
         if (wardrobe) {
             draft.name = life.name;
-            draft.clan = life.clan;
             draft.village = life.village;
             draft.presence = life.presence;
             System.arraycopy(life.style, 0, draft.style, 0, Math.min(life.style.length, draft.style.length));
-            previewEye = life.eyeAwakened ? life.clan().eye() : null;
+            previewEye = life.portraitEye();
         } else {
             previewEye = null;
         }
@@ -217,19 +222,11 @@ public final class MainActivity extends Activity {
         scroll.addView(body, new ScrollView.LayoutParams(MATCH, WRAP));
         populateBody();
         if (page.equals("life")) root.addView(advanceBar());
-        if (page.equals("detail") && chooseClan) {
-            Clans.Clan clan = Clans.ALL[selectedClan];
-            root.addView(footerButton("Choose " + clan.name(), () -> {
-                draft.clan = selectedClan;
-                chooseClan = false;
-                go("create");
-            }));
-        }
         if (page.equals("create")) {
             root.addView(footerButton(wardrobeMode ? "Save appearance" : "Begin life",
                     wardrobeMode ? this::saveWardrobe : this::confirmLife));
         }
-        if (isTab() && !chooseClan) root.addView(dock());
+        if (isTab()) root.addView(dock());
         setContentView(window);
         window.requestApplyInsets();
         restoreScroll(at);
@@ -239,12 +236,19 @@ public final class MainActivity extends Activity {
         switch (page) {
             case "title" -> titlePage();
             case "life" -> lifePage();
+            case "village" -> villagePage();
+            case "career" -> careerPage();
+            case "academy" -> academyPage();
+            case "council" -> councilPage();
             case "missions" -> missionsPage();
             case "clans" -> clansPage();
             case "detail" -> clanDetail();
             case "summons" -> summonsPage();
             case "people" -> peoplePage();
             case "person" -> personPage();
+            case "romance" -> romancePage();
+            case "date" -> datePage();
+            case "family", "legacy" -> familyPage();
             case "create" -> createPage();
             case "duel" -> duelPage();
         }
@@ -259,7 +263,7 @@ public final class MainActivity extends Activity {
         LinearLayout bar = row();
         inset(bar, 12, 4, 12, 4);
         bar.setBackgroundColor(NIGHT);
-        if (!isTab() || chooseClan) {
+        if (!isTab()) {
             Button back = button("←", Color.WHITE, NIGHT, null, this::handleBack);
             back.setTextSize(21);
             back.setContentDescription("Go back");
@@ -337,6 +341,13 @@ public final class MainActivity extends Activity {
     }
 
     private void titlePage() {
+        if (life.deceased) {
+            heading("Shinobi Life", "Generation " + life.generation + " · " + life.name + " passed away");
+            buttonIn(body, "View family legacy", Color.WHITE, RED, () -> go("legacy"));
+            gap(body, 8);
+            buttonIn(body, "New Shinobi Life", RED, BLUSH, () -> openCreator(false, "title"));
+            return;
+        }
         body.addView(titleHeroBanner());
         gap(body, 14);
 
@@ -349,9 +360,8 @@ public final class MainActivity extends Activity {
         gap(saveCard, 10);
 
         LinearLayout heroRow = row();
-        EyePower eye = life.clan().eye();
         Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5,
-                "Portrait of " + life.name, life.eyeAwakened ? eye : null);
+                "Portrait of " + life.name, life.portraitEye());
         heroRow.addView(portrait, new LinearLayout.LayoutParams(dp(88), dp(88)));
         LinearLayout details = column();
         inset(details, 12, 0, 0, 0);
@@ -394,7 +404,6 @@ public final class MainActivity extends Activity {
         titleActionCard("Clan & Bloodline Codex",
                 "Inspect all 22 clans, combat jutsu, summons & eye powers",
                 "clans", GREEN, MINT, () -> {
-                    chooseClan = false;
                     filter = null;
                     returnPage = "title";
                     go("clans");
@@ -414,7 +423,7 @@ public final class MainActivity extends Activity {
         milestones.addView(row1);
         gap(milestones, 7);
         LinearLayout row2 = row();
-        String bloodlineStatus = eye == null ? "Standard Lineage" : life.eyeAwakened ? eye.title : "Dormant (" + eye.title + ")";
+        String bloodlineStatus = Life.bloodlineNames(life.heritageEyes());
         row2.addView(milestoneChip("Bloodline Eye", bloodlineStatus, PURPLE),
                 new LinearLayout.LayoutParams(0, WRAP, 1));
         row2.addView(new View(this), new LinearLayout.LayoutParams(dp(8), 1));
@@ -513,9 +522,8 @@ public final class MainActivity extends Activity {
         hero.addView(heading);
         gap(hero, 9);
         LinearLayout card = row();
-        EyePower eye = life.clan().eye();
         Portrait portrait = new Portrait(this, life.style, life.age(), 0xFFEBCEB5, "Portrait of " + life.name,
-                life.eyeAwakened ? eye : null);
+                life.portraitEye());
         card.addView(portrait, new LinearLayout.LayoutParams(dp(86), dp(86)));
         LinearLayout info = column();
         inset(info, 12, 0, 0, 0);
@@ -527,6 +535,7 @@ public final class MainActivity extends Activity {
         titleRow.addView(nameView, nameParams);
         info.addView(titleRow);
         info.addView(text(life.village() + " · " + life.rank(), 13, LIGHT_TEXT, MEDIUM));
+        info.addView(text(Life.GENDERS[life.gender] + " · " + Life.FAMILIES[life.family], 12, LIGHT_TEXT, MEDIUM));
         gap(info, 6);
         LinearLayout quickStats = row();
         addHeroBadge(quickStats, "Coins", money(life.get(Stat.COINS)), true);
@@ -568,7 +577,7 @@ public final class MainActivity extends Activity {
             else update();
         });
         quick(actions, "Style", life.styled ? "Wardrobe" : "35 / Free", "wardrobe", this::openStyleMenu);
-        quick(actions, "Work", life.worked ? "Done" : "+55 Coin", "coin", () -> {
+        quick(actions, "Work", life.worked ? "Done" : "+" + life.workPay() + " Coin", "coin", () -> {
             if (!life.work()) message(life.worked ? "You already worked this season." : "You need 12 stamina.");
             else update();
         });
@@ -577,22 +586,34 @@ public final class MainActivity extends Activity {
             else update();
         });
         body.addView(actions);
+        gap(body, 8);
+        buttonIn(body, "Activities & travel", RED, BLUSH, () -> go("village"));
+        gap(body, 7);
+        LinearLayout offices = row();
+        offices.addView(button("Academy", RED, WHITE, BORDER, () -> go("academy")),
+                new LinearLayout.LayoutParams(0, WRAP, 1));
+        LinearLayout.LayoutParams council = new LinearLayout.LayoutParams(0, WRAP, 1);
+        council.setMarginStart(dp(7));
+        offices.addView(button(life.leafAtWar && life.village == Life.LEAF ? "Council · At war" : "Village council",
+                RED, WHITE, BORDER, () -> go("council")), council);
+        body.addView(offices);
 
-        if (eye != null) {
+        for (EyePower eye : EyePower.values()) {
+            if ((life.heritageEyes() & eye.mask()) == 0) continue;
             gap(body, 10);
             LinearLayout bloodline = card(LILAC, 12);
             bloodline.addView(text(eye.title, 19, INK, DISPLAY));
-            if (life.eyeAwakened) {
+            if ((life.awakenedEyes & eye.mask()) != 0) {
                 bloodline.addView(text("Awakened · " + eye.move + " (" + eye.description() + ")", 13, PURPLE, MEDIUM));
             } else {
                 String progress = "Skill " + life.get(Stat.SKILL) + "/" + eye.skill
                         + (eye.wins > 0 ? " · Cedar Pass wins " + life.victories + "/" + eye.wins : "");
                 bloodline.addView(text("Dormant · Awakens at " + eye.requirement() + " (" + progress + ")", 13, PURPLE, MEDIUM));
             }
-            if (life.canAwakenEye()) {
+            if (life.canAwakenEye(eye)) {
                 gap(bloodline, 6);
                 buttonIn(bloodline, "Awaken " + eye.title, PURPLE, WHITE, () -> {
-                    if (life.awakenEye()) update();
+                    if (life.awakenEye(eye)) update();
                 });
             }
             body.addView(bloodline);
@@ -678,12 +699,197 @@ public final class MainActivity extends Activity {
     }
 
     private View advanceBar() {
-        return footerButton("Advance season  ›", () -> {
+        LinearLayout actions = row();
+        inset(actions, 16, 7, 16, 7);
+        Button season = button("Advance season", Color.WHITE, RED, null, () -> passTime(false));
+        actions.addView(season, new LinearLayout.LayoutParams(0, WRAP, 1));
+        Button year = button("Age +1", RED, BLUSH, BORDER, () -> passTime(true));
+        LinearLayout.LayoutParams yearLayout = new LinearLayout.LayoutParams(WRAP, WRAP);
+        yearLayout.setMarginStart(dp(7));
+        actions.addView(year, yearLayout);
+        return actions;
+    }
+
+    private void passTime(boolean year) {
+        int age = life.age();
+        do {
             life.advance();
-            journalLimit = JOURNAL_BATCH;
-            scroll.scrollTo(0, 0);
-            update();
+        } while (year && !life.deceased && life.enemyHp == 0 && life.age() == age);
+        if (life.deceased) {
+            SaveGame.write(this, life);
+            go("legacy");
+            return;
+        }
+        journalLimit = JOURNAL_BATCH;
+        scroll.scrollTo(0, 0);
+        update();
+    }
+
+    private void villagePage() {
+        heading("Activities", life.village() + " · " + life.date() + " · " + life.get(Stat.STAMINA) + " stamina");
+        buttonIn(body, "Career · " + life.career.title, RED, BLUSH, () -> go("career"));
+        gap(body, 7);
+        buttonIn(body, "Meet village residents", PURPLE, LILAC, () -> go("romance"));
+        gap(body, 7);
+        buttonIn(body, "Travel · 20 coins and 12 stamina", Color.WHITE, RED, () -> {
+            new AlertDialog.Builder(this).setTitle("Choose a destination").setItems(Life.VILLAGES, (dialog, which) -> {
+                if (which == life.village) return;
+                if (life.visitVillage(which)) update();
+                else message("Travel requires 20 coins and 12 stamina.");
+            }).setNegativeButton("Stay here", null).show();
         });
+        gap(body, 12);
+        for (Life.ActivityGroup group : Life.ActivityGroup.values()) {
+            body.addView(text(group.label, 21, INK, DISPLAY));
+            gap(body, 7);
+            for (Life.VillageAction action : Life.VillageAction.values()) {
+                if (action.group == group) activityCard(action);
+            }
+        }
+    }
+
+    private void activityCard(Life.VillageAction action) {
+            LinearLayout activity = card(WHITE, 13);
+            activity.addView(text(action == Life.VillageAction.MARKET ? Life.VILLAGE_WORK[life.village] : action.title, 19, INK, DISPLAY));
+            activity.addView(text(life.activityDescription(action), 14, MUTED, BODY));
+            gap(activity, 5);
+            if ((life.villageActions & action.mask()) != 0) activity.addView(pill("Done this season", GREEN, MINT));
+            else if (life.get(Stat.SKILL) < action.skill) activity.addView(pill("Requires " + action.skill + " Skill", MUTED, PAPER));
+            else buttonIn(activity, "Do activity", RED, BLUSH, () -> {
+                if (life.villageActivity(action)) update();
+                else message("Requires " + action.stamina + " stamina and " + action.cost + " coins.");
+            });
+            body.addView(activity);
+            gap(body, 8);
+    }
+
+    private void academyPage() {
+        heading(life.village() + " Academy", life.academyRank.title + " · " + life.academyCredits + " class credits");
+        Life.AcademyRank next = life.nextRank();
+        if (next != null) {
+            fact(next.title + " exam", life.examRequirements() + ". You have " + life.academyCredits + " credits, "
+                    + life.get(Stat.SKILL) + " Skill, and " + life.victories + " duel wins.");
+            if (life.canTakeExam()) {
+                buttonIn(body, "Take the " + next.title + " exam", Color.WHITE, RED, () -> {
+                    if (life.takeExam()) update();
+                });
+                gap(body, 10);
+            }
+        } else fact("Advanced classes", "You reached Jōnin. Keep studying or build support to run for Hokage in Hidden Leaf.");
+        if (life.attendedClass) {
+            body.addView(pill("Class attended this season", GREEN, MINT));
+            return;
+        }
+        body.addView(text(next == null ? "Jōnin classes" : next.title + " preparation", 20, INK, DISPLAY));
+        gap(body, 7);
+        for (Life.Lesson lesson : Life.Lesson.values()) {
+            LinearLayout card = card(WHITE, 13);
+            card.addView(text(lesson.effect + " · +1 credit · " + Life.LESSON_STAMINA + " stamina", 13, MUTED, BODY));
+            buttonIn(card, lesson.title, PURPLE, LILAC, () -> {
+                if (life.attendClass(lesson)) update();
+                else message("Class requires " + Life.LESSON_STAMINA + " stamina.");
+            });
+            body.addView(card);
+            gap(body, 8);
+        }
+    }
+
+    private void councilPage() {
+        heading(life.village() + " Council", life.villageLeader());
+        if (life.village != Life.LEAF) {
+            fact("Border news", life.leafAtWar ? "Hidden Leaf and Hidden Stone are at war."
+                    : "Hidden Leaf and Hidden Stone are at peace.");
+            fact("Running for Hokage", "Travel to Hidden Leaf to meet the council and register your candidacy.");
+            return;
+        }
+        fact(life.leafAtWar ? "At war with Hidden Stone" : "At peace with Hidden Stone",
+                "Border tension " + life.borderTension + "/100 · Village stability " + life.leafStability
+                        + "/100 · Treasury " + life.leafTreasury + " coins");
+        if (life.leafAtWar) {
+            fact("War effort", life.warEffort + "/60. Fund relief, protect shelters, or help civilians. At 60, Hidden Leaf holds the border at the end of the season. At zero stability, the council accepts defeat.");
+        }
+        if (life.hokage) {
+            fact("Hokage approval", life.approval + "/100. Choose one council decision per season.");
+            for (Life.Policy policy : Life.Policy.values()) {
+                LinearLayout action = card(WHITE, 12);
+                action.addView(text(policy.description, 14, MUTED, BODY));
+                String blocker = life.policyBlocker(policy);
+                if (blocker.isEmpty()) {
+                    buttonIn(action, policy.title, Color.WHITE, RED, () -> {
+                        if (policy == Life.Policy.WAR) {
+                            new AlertDialog.Builder(this).setTitle("Declare war?")
+                                    .setMessage("War lowers village stability each season. A negotiated truce can end it.")
+                                    .setNegativeButton("Cancel", null)
+                                    .setPositiveButton("Declare war", (dialog, which) -> {
+                                        if (life.govern(policy)) update();
+                                    }).show();
+                        } else if (life.govern(policy)) update();
+                    });
+                } else {
+                    action.addView(text(policy.title, 17, INK, DISPLAY));
+                    action.addView(pill(blocker, MUTED, PAPER));
+                }
+                body.addView(action);
+                gap(body, 7);
+            }
+        } else {
+            fact("Hokage election", "Requires Jōnin rank, 55 Fame, and 60 public support. Current support: "
+                    + life.electionSupport() + "/100.");
+            if (!life.campaigned && life.campaignSupport < 30) {
+                buttonIn(body, "Meet residents · 25 coins", PURPLE, LILAC, () -> {
+                    if (life.campaign()) update();
+                    else message("The meeting costs 25 coins.");
+                });
+                gap(body, 8);
+            }
+            if (life.canRunForHokage()) {
+                buttonIn(body, "Run for Hokage", Color.WHITE, RED, () -> {
+                    if (life.runForHokage()) update();
+                });
+                gap(body, 9);
+            }
+        }
+        if (life.leafAtWar) {
+            fact("Wartime service", life.warService ? "You already helped this season."
+                    : "One assignment per season. Helping civilians boosts Fame and village stability.");
+            if (!life.warService) {
+                buttonIn(body, "Deliver supplies · 12 stamina · +5 Fame", GREEN, MINT, () -> {
+                    if (life.helpDuringWar(true)) update();
+                    else message("Delivering supplies requires 12 stamina.");
+                });
+                gap(body, 6);
+                buttonIn(body, "Escort evacuees · 16 stamina · −10 Health · +8 Fame", GREEN, MINT, () -> {
+                    if (life.helpDuringWar(false)) update();
+                    else message("Escorting evacuees requires 16 stamina and at least 20 Health.");
+                });
+            }
+        }
+    }
+
+    private void careerPage() {
+        heading("Career", life.career.title + " · " + life.careerShifts + " completed shifts");
+        fact("Current pay", life.workPay() + " coins per shift. Every three shifts in the same job raises your pay by 10 coins, up to 30.");
+        if (!life.worked) {
+            buttonIn(body, "Work a shift · 12 stamina", Color.WHITE, RED, () -> {
+                if (life.work()) update();
+                else message("Work requires 12 stamina.");
+            });
+            gap(body, 10);
+        }
+        for (Life.Career job : Life.Career.values()) {
+            LinearLayout card = card(WHITE, 13);
+            card.addView(text(job.title, 18, INK, DISPLAY));
+            card.addView(text(job.pay + " coins starting pay · " + job.skill + " Skill required", 14, MUTED, BODY));
+            gap(card, 5);
+            if (job == life.career) card.addView(pill("Current job", GREEN, MINT));
+            else if (life.worked) card.addView(pill("Applications reopen next season", MUTED, PAPER));
+            else if (life.get(Stat.SKILL) < job.skill) card.addView(pill("Build more Skill to apply", MUTED, PAPER));
+            else buttonIn(card, "Apply", RED, BLUSH, () -> {
+                if (life.changeCareer(job)) update();
+            });
+            body.addView(card);
+            gap(body, 8);
+        }
     }
 
     private void missionsPage() {
@@ -711,7 +917,10 @@ public final class MainActivity extends Activity {
             else if (!life.canStart(mission)) {
                 card.addView(pill(life.get(Stat.STAMINA) < mission.stamina ? "Low stamina" : "Needs 30 health", RED, BLUSH));
             } else {
-                buttonIn(card, mission == Missions.DUEL ? "Enter duel" : "Take assignment", RED, BLUSH, () -> take(mission, false));
+                buttonIn(card, mission == Missions.DUEL ? "Enter duel" : mission == Missions.CARAVAN ? "Choose escort route" : "Take assignment", RED, BLUSH, () -> {
+                    if (mission == Missions.CARAVAN) escortRoutes();
+                    else take(mission, false);
+                });
                 if (mission != Missions.DUEL && life.matches(mission)) {
                     Clans.Clan clan = life.clan();
                     gap(card, 5);
@@ -734,6 +943,33 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void escortRoutes() {
+        boolean canScout = life.hasSummon(Summon.SHRIKE);
+        String[] routes = canScout ? new String[]{"Main road", "Shortcut", "Send Lantern Shrike to scout · 8 chakra"}
+                : new String[]{"Main road", "Shortcut"};
+        LinearLayout panel = column();
+        inset(panel, 20, 6, 20, 5);
+        panel.addView(text("The merchant suggests a shortcut through Cedar Pass. At 22 Skill, the shortcut earns +65 coins and +5 Fame. Below 22 Skill, an ambush costs 20 Health and 45 coins from the reward.",
+                15, INK, BODY));
+        if (canScout) panel.addView(text("Scouting avoids the ambush and earns +30 coins and +3 Fame.", 14, GREEN, MEDIUM));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("A dangerous shortcut")
+                .setView(panel).setNegativeButton("Decide later", null).create();
+        for (int i = 0; i < routes.length; i++) {
+            int route = i;
+            gap(panel, 6);
+            buttonIn(panel, routes[i], RED, BLUSH, () -> {
+                if (route == 0) {
+                    dialog.dismiss();
+                    take(Missions.CARAVAN, false);
+                } else if (route == 1 ? life.escortShortcut() : life.escortWithScout()) {
+                    dialog.dismiss();
+                    update();
+                } else message("This route is unavailable. Scouting requires 8 chakra.");
+            });
+        }
+        dialog.show();
+    }
+
     private void take(Missions mission, boolean technique) {
         take(mission, technique, null);
     }
@@ -753,10 +989,9 @@ public final class MainActivity extends Activity {
 
     private void duelPage() {
         heading("Cedar Pass", "Public duel · Ibara Kase");
-        EyePower eye = life.clan().eye();
         LinearLayout arena = row();
         arena.addView(fighter(life.name, life.style, life.age(), LILAC, life.get(Stat.HEALTH), 100,
-                life.get(Stat.CHAKRA), life.eyeAwakened ? eye : null), new LinearLayout.LayoutParams(0, WRAP, 1));
+                life.get(Stat.CHAKRA), life.portraitEye()), new LinearLayout.LayoutParams(0, WRAP, 1));
         TextView vs = text("VS", 16, RED, DISPLAY);
         inset(vs, 8, 0, 8, 0);
         arena.addView(vs);
@@ -781,9 +1016,9 @@ public final class MainActivity extends Activity {
             gap(log, 4);
             log.addView(text("Burn active: 5 fire damage next turn", 13, RED, MEDIUM));
         }
-        if (life.enemyHp > 0 && life.eyeAwakened && eye == EyePower.SPARKGLASS) {
+        if (life.enemyHp > 0 && (life.awakenedEyes & (EyePower.SPARKGLASS.mask() | EyePower.FARWATCH.mask())) != 0) {
             gap(log, 4);
-            log.addView(text("Sparkglass reads " + (life.incomingDamage() == 18 ? "Cedar Breaker" : "Stone Jab")
+            log.addView(text("Your eye reads " + (life.incomingDamage() == 18 ? "Cedar Breaker" : "Stone Jab")
                     + " next · " + life.incomingDamage() + " base damage", 13, PURPLE, MEDIUM));
         }
         log.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
@@ -798,11 +1033,16 @@ public final class MainActivity extends Activity {
         duelButton("Guard · Recover 8 chakra (reduces counter to 3)", Life.Move.GUARD, GREEN, MINT);
         CombatArt art = CombatArt.forClan(life.clan());
         duelArt(art.name(), art.description(), life.artDuelBlocker(art), Life.Move.TECHNIQUE);
-        if (eye != null && life.eyeAwakened) {
-            String blocker = life.eyeDuelBlocker();
-            String detail = blocker.isEmpty() ? eye.damage(life.observedMove) + " damage · " + eye.chakra + " chakra · Stops the counter"
-                    : eye.title;
-            duelArt(eye.move, detail, blocker, Life.Move.EYE);
+        for (EyePower eye : EyePower.values()) {
+            if ((life.awakenedEyes & eye.mask()) == 0) continue;
+            String blocker = life.eyeDuelBlocker(eye);
+            if (blocker.isEmpty()) {
+                body.addView(text(eye.damage(life.observedMove) + " damage · " + eye.chakra + " chakra · Stops the counter", 13, PURPLE, MEDIUM));
+                buttonIn(body, eye.move, PURPLE, LILAC, () -> {
+                    if (life.castEye(eye)) update();
+                });
+            } else body.addView(pill(eye.move + " · " + blocker, MUTED, PAPER));
+            gap(body, 7);
         }
         java.util.ArrayList<Summon> available = new java.util.ArrayList<>();
         boolean hasPact = false;
@@ -882,9 +1122,9 @@ public final class MainActivity extends Activity {
     }
 
     private void clansPage() {
-        heading(chooseClan ? "Choose a clan" : "Clan codex",
-                "Your clan shapes your starting perk, jutsu, and specialty. Two lineages can awaken inherited eye powers.");
-        if (!chooseClan) {
+        heading("Clan codex",
+                "Your clan shapes your starting perk and jutsu. Three lineages carry rare eye powers.");
+        {
             LinearLayout current = card(LILAC, 13);
             LinearLayout row = row();
             addSeal(row, life.clan, 46);
@@ -973,14 +1213,6 @@ public final class MainActivity extends Activity {
         }
         fact("Family tradition", clan.knack());
         fact("Origins", clan.origin());
-        if (!chooseClan && selectedClan != life.clan) {
-            buttonIn(body, "Start a life as " + clan.name(), Color.WHITE, RED, () -> {
-                openCreator(false, "clans");
-                draft.clan = selectedClan;
-                editingOrigin = true;
-                render(0);
-            });
-        }
     }
 
     private void addSeal(LinearLayout host, int index, int size) {
@@ -1047,6 +1279,12 @@ public final class MainActivity extends Activity {
 
     private void peoplePage() {
         heading("Relationships", "Spend time, offer gifts, and unlock ally favors at 60 Trust.");
+        String relationship = life.partner < 0 ? "Meet someone" : life.residents()[life.partner].name
+                + (life.married ? " · Spouse" : " · Partner");
+        buttonIn(body, "Romance · " + relationship, Color.WHITE, RED, () -> go("romance"));
+        gap(body, 7);
+        buttonIn(body, "Family & lineage", PURPLE, LILAC, () -> go("family"));
+        gap(body, 9);
         for (int i = 0; i < Life.CONTACTS.length; i++) {
             int contact = i;
             LinearLayout item = row();
@@ -1055,7 +1293,7 @@ public final class MainActivity extends Activity {
             LinearLayout info = column();
             inset(info, 10, 0, 8, 0);
             LinearLayout top = row();
-            top.addView(text(Life.CONTACTS[i], 20, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
+            top.addView(text(life.contactName(i), 20, INK, DISPLAY), new LinearLayout.LayoutParams(0, WRAP, 1));
             top.addView(pill(Life.trustTier(life.bonds[i]), GREEN, MINT));
             info.addView(top);
             info.addView(text(Life.ROLES[i] + " · Age " + contactAge(i), 13, MUTED, MEDIUM));
@@ -1075,10 +1313,199 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private Portrait romancePortrait(Life.Interest interest) {
+        int[] appearance;
+        if (interest.id < ROMANCE_STYLE.length && life.generation == 1) {
+            appearance = ROMANCE_STYLE[interest.id];
+        } else {
+            Random random = new Random(life.worldSeed ^ (interest.id * 0x9e3779b97f4a7c15L));
+            appearance = new int[Portrait.OPTIONS.length];
+            for (int i = 0; i < appearance.length; i++) appearance[i] = random.nextInt(Portrait.OPTIONS[i].length);
+        }
+        return new Portrait(this, appearance, life.residentAge(interest),
+                0xFFEDCFC9, "Portrait of " + interest.name);
+    }
+
+    private void romancePage() {
+        heading("People in " + life.village(), "Get to know local residents, meet old friends, or ask someone out.");
+        int shown = 0;
+        for (Life.Interest interest : life.residents()) {
+            if (interest.village >= 0 && interest.village != life.village && !life.isPartner(interest)
+                    && life.affection(interest) == 0) continue;
+            if (shown++ == residentLimit) {
+                buttonIn(body, "Show more residents", RED, BLUSH, () -> {
+                    residentLimit += 16;
+                    refreshBody();
+                });
+                break;
+            }
+            LinearLayout item = row();
+            inset(item, 12, 10, 12, 10);
+            item.addView(romancePortrait(interest), new LinearLayout.LayoutParams(dp(61), dp(61)));
+            LinearLayout copy = column();
+            inset(copy, 10, 0, 7, 0);
+            copy.addView(text(interest.name, 20, INK, DISPLAY));
+            copy.addView(text(interest.gender + " · Age " + life.residentAge(interest) + " · " + Clans.ALL[interest.clan].name(), 13, MUTED, BODY));
+            copy.addView(text(life.romanceStatus(interest) + " · " + life.affection(interest) + "/100 Affection", 13, RED, MEDIUM));
+            item.addView(copy, new LinearLayout.LayoutParams(0, WRAP, 1));
+            item.addView(text("›", 23, RED, BODY));
+            clickable(item, WHITE, BORDER, () -> {
+                selectedInterest = interest;
+                go("date");
+            });
+            body.addView(item);
+            gap(body, 8);
+        }
+    }
+
+    private void datePage() {
+        Life.Interest interest = selectedInterest;
+        LinearLayout intro = row();
+        inset(intro, 14, 13, 14, 13);
+        intro.addView(romancePortrait(interest), new LinearLayout.LayoutParams(dp(84), dp(84)));
+        LinearLayout identity = column();
+        inset(identity, 12, 0, 0, 0);
+        identity.addView(text(interest.name, 27, Color.WHITE, DISPLAY));
+        identity.addView(text(life.romanceStatus(interest) + " · " + life.residentAge(interest) + " years old",
+                14, LIGHT_TEXT, MEDIUM));
+        intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
+        body.addView(scene(intro));
+        gap(body, 9);
+        LinearLayout bond = card(WHITE, 13);
+        bond.addView(text("Affection · " + life.affection(interest) + "/100", 17, RED, DISPLAY));
+        gap(bond, 6);
+        bond.addView(progress(life.affection(interest), RED));
+        body.addView(bond);
+        gap(body, 9);
+        fact("About " + interest.name, interest.about + " " + Clans.ALL[interest.clan].name() + " lineage.");
+        if (life.isPartner(interest)) {
+            buttonIn(body, "Family & children", PURPLE, LILAC, () -> go("family"));
+            gap(body, 8);
+        }
+        boolean friendshipOnly = life.partner >= 0 && !life.isPartner(interest);
+        if (friendshipOnly) {
+            body.addView(pill("Friendship · You are in an exclusive relationship", MUTED, PAPER));
+            gap(body, 8);
+        }
+        if (life.romanceVisited(interest)) {
+            body.addView(pill("You already spent time together this season.", GREEN, MINT));
+            gap(body, 8);
+        } else if (life.affection(interest) == 0) {
+            romanceActionCard(interest, Life.RomanceAction.INTRODUCE);
+        } else {
+            romanceActionCard(interest, Life.RomanceAction.TALK);
+            if (friendshipOnly) return;
+            romanceActionCard(interest, Life.RomanceAction.WALK);
+            romanceActionCard(interest, Life.RomanceAction.DINNER);
+            if (!life.isPartner(interest)) romanceActionCard(interest, Life.RomanceAction.COMMIT);
+            else if (!life.married) romanceActionCard(interest, Life.RomanceAction.PROPOSE);
+        }
+        if (life.isPartner(interest)) {
+            String leave = life.married ? "Get divorced" : "Break up";
+            buttonIn(body, leave, RED, BLUSH, () -> new AlertDialog.Builder(this)
+                    .setTitle(leave + "?")
+                    .setMessage("This ends your relationship with " + interest.name + " and costs 12 Happiness.")
+                    .setNegativeButton("Stay together", null)
+                    .setPositiveButton(leave, (dialog, which) -> {
+                        if (life.endRomance(interest)) update();
+                    }).show());
+        }
+    }
+
+    private void familyPage() {
+        heading(life.deceased ? "Family legacy" : "Family & lineage",
+                "Generation " + life.generation + " · " + life.name + " · Age " + life.age());
+        if (life.deceased) {
+            fact("Life ended", life.name + " passed away at age " + life.age() + ". Choose which child will carry on this save.");
+        } else {
+            String heritage = life.clan().name()
+                    + (life.otherClan < 0 ? "" : " + " + Clans.ALL[life.otherClan].name());
+            fact("Your ancestry", heritage + " · " + Life.bloodlineNames(life.heritageEyes()));
+            if (life.partner >= 0) {
+                Life.Interest otherParent = life.residents()[life.partner];
+                fact("Your partner", otherParent.name + " · " + Clans.ALL[otherParent.clan].name()
+                        + " · " + Life.bloodlineNames(otherParent.eyes()));
+                fact("Inheritance", "Each parent independently passes down each of their eye powers 50% of the time. A child can inherit both different powers, one, or neither. Inherited powers start dormant.");
+            }
+            String blocker = life.familyBlocker();
+            if (blocker.isEmpty()) {
+                buttonIn(body, "Welcome a child · " + Life.CHILD_COST + " coins", Color.WHITE, RED, this::nameChild);
+                gap(body, 10);
+            } else fact("Growing your family", blocker);
+        }
+        for (Life.Child child : life.children) {
+            LinearLayout panel = card(WHITE, 13);
+            panel.addView(text(child.name(), 21, INK, DISPLAY));
+            panel.addView(text(Life.GENDERS[child.gender()] + " · Age " + life.childAge(child), 14, MUTED, BODY));
+            String ancestry = Clans.ALL[child.clan()].name();
+            if (child.otherClan() >= 0) ancestry += " + " + Clans.ALL[child.otherClan()].name();
+            panel.addView(text(ancestry + " · " + Life.bloodlineNames(child.eyes()), 14, PURPLE, MEDIUM));
+            if (life.deceased) {
+                gap(panel, 6);
+                buttonIn(panel, "Continue as " + child.name(), Color.WHITE, RED, () -> chooseHeir(child));
+            }
+            body.addView(panel);
+            gap(body, 8);
+        }
+        if (life.deceased && life.children.isEmpty()) {
+            buttonIn(body, "Begin a new life", Color.WHITE, RED, () -> openCreator(false, "title"));
+        }
+    }
+
+    private void nameChild() {
+        Random random = new Random();
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(24)});
+        String suggested = Life.randomName(random);
+        input.setText(suggested);
+        new AlertDialog.Builder(this).setTitle("Name your child").setView(input)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Welcome child", (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    if (life.welcomeChild(name.isEmpty() ? suggested : name, random)) update();
+                }).show();
+    }
+
+    private void chooseHeir(Life.Child child) {
+        String age = life.childAge(child) < 18 ? "The story jumps forward until " + child.name() + " turns 18. " : "";
+        new AlertDialog.Builder(this).setTitle("Continue as " + child.name() + "?")
+                .setMessage(age + "Your heir inherits half the estate and keeps the family journal. This choice continues only their branch of the family.")
+                .setNegativeButton("Back", null)
+                .setPositiveButton("Continue", (dialog, which) -> {
+                    Life successor = life.succeed(child);
+                    if (successor != null) {
+                        life = successor;
+                        SaveGame.write(this, life);
+                        go("life");
+                    }
+                }).show();
+    }
+
+    private void romanceActionCard(Life.Interest interest, Life.RomanceAction action) {
+        LinearLayout row = card(WHITE, 11);
+        String cost = action.stamina > 0 ? action.stamina + " stamina" : "";
+        if (action.coins > 0) cost += (cost.isEmpty() ? "" : " · ") + action.coins + " coins";
+        int gain = Math.min(100 - life.affection(interest), life.romanceGain(interest, action));
+        if (gain > 0) cost += (cost.isEmpty() ? "" : " · ") + "+" + gain + " Affection";
+        if (!cost.isEmpty()) row.addView(text(cost, 13, MUTED, MEDIUM));
+        String blocker = life.romanceBlocker(interest, action);
+        if (blocker.isEmpty()) {
+            buttonIn(row, action.label, Color.WHITE, RED, () -> {
+                if (life.romance(interest, action)) update();
+            });
+        } else {
+            row.addView(text(action.label, 16, INK, DISPLAY));
+            row.addView(pill(blocker, MUTED, PAPER));
+        }
+        body.addView(row);
+        gap(body, 8);
+    }
+
     private Portrait contactPortrait(int contact) {
         int[] hues = {0xFFE9CDBA, 0xFFCBDED2, 0xFFDFCEE9};
         return new Portrait(this, CONTACT_STYLE[contact], contactAge(contact),
-                hues[contact], "Portrait of " + Life.CONTACTS[contact]);
+                hues[contact], "Portrait of " + life.contactName(contact));
     }
 
     private int contactAge(int contact) { return contact == 0 ? life.age() + 20 : life.age(); }
@@ -1090,7 +1517,7 @@ public final class MainActivity extends Activity {
         intro.addView(contactPortrait(contact), new LinearLayout.LayoutParams(dp(86), dp(86)));
         LinearLayout identity = column();
         inset(identity, 12, 0, 0, 0);
-        identity.addView(text(Life.CONTACTS[contact], 28, Color.WHITE, DISPLAY));
+        identity.addView(text(life.contactName(contact), 28, Color.WHITE, DISPLAY));
         identity.addView(text(Life.ROLES[contact] + " · Age " + contactAge(contact) + " · " + Life.trustTier(life.bonds[contact]),
                 13, LIGHT_TEXT, MEDIUM));
         intro.addView(identity, new LinearLayout.LayoutParams(0, WRAP, 1));
@@ -1105,11 +1532,11 @@ public final class MainActivity extends Activity {
         gap(body, 10);
 
         String[] history = {
-            "Nao took you to lantern festivals when you were too small to carry your own.",
+            life.contactName(0) + " took you to lantern festivals when you were too small to carry your own.",
             "You and Jun used to race home from academy drills. Jun still insists you cut corners.",
             "Mika was your closest match in academy trials and still asks how your training is going."
         };
-        fact("How you met", history[contact]);
+        fact(contact == 0 ? Life.FAMILIES[life.family] : "How you met", history[contact]);
 
         if ((life.interacted & (1 << contact)) != 0) {
             body.addView(pill("You spent time together this season", GREEN, MINT));
@@ -1168,8 +1595,8 @@ public final class MainActivity extends Activity {
         inset(control, 12, 0, 0, 0);
         control.addView(text(wardrobeMode ? "Stylist Wardrobe" : "Create your shinobi", 20, Color.WHITE, DISPLAY));
         String previewName = wardrobeMode ? displayName(life.name, life.clan)
-                : displayName(draft.name.trim().isEmpty() ? "Ren" : draft.name.trim(), draft.clan);
-        control.addView(text(previewName + " · " + Clans.ALL[wardrobeMode ? life.clan : draft.clan].role().label,
+                : draft.name.trim().isEmpty() ? "Ren" : draft.name.trim();
+        control.addView(text(previewName + " · " + (wardrobeMode ? life.clan().role().label : Life.GENDERS[draft.gender]),
                 12, LIGHT_TEXT, MEDIUM));
         gap(control, 6);
         LinearLayout btnRow = row();
@@ -1178,25 +1605,6 @@ public final class MainActivity extends Activity {
         shuffle.setSingleLine(true);
         inset(shuffle, 9, 4, 9, 4);
         btnRow.addView(shuffle, new LinearLayout.LayoutParams(WRAP, WRAP));
-        Button eyeToggle = new Button(this);
-        eyeToggle.setAllCaps(false);
-        eyeToggle.setStateListAnimator(null);
-        eyeToggle.setTypeface(MEDIUM);
-        eyeToggle.setTextSize(12);
-        eyeToggle.setSingleLine(true);
-        eyeToggle.setTextColor(GOLD);
-        eyeToggle.setMinimumHeight(dp(48));
-        inset(eyeToggle, 9, 4, 9, 4);
-        eyeToggle.setText(eyeLabel(previewEye));
-        clickable(eyeToggle, NIGHT_PANEL, null, () -> {
-            previewEye = previewEye == null ? EyePower.SPARKGLASS
-                    : previewEye == EyePower.SPARKGLASS ? EyePower.HORIZON : null;
-            eyeToggle.setText(eyeLabel(previewEye));
-            editorPortrait.setEyePower(previewEye);
-        });
-        LinearLayout.LayoutParams eyeParams = new LinearLayout.LayoutParams(WRAP, WRAP);
-        eyeParams.setMarginStart(dp(6));
-        btnRow.addView(eyeToggle, eyeParams);
         control.addView(btnRow);
         preview.addView(control, new LinearLayout.LayoutParams(0, WRAP, 1));
         surround.addView(scene(preview));
@@ -1212,11 +1620,7 @@ public final class MainActivity extends Activity {
         return surround;
     }
 
-    private String eyeLabel(EyePower eye) {
-        if (eye == EyePower.SPARKGLASS) return "Sparkglass";
-        if (eye == EyePower.HORIZON) return "Horizon";
-        return "Normal Eye";
-    }
+
 
     private void editorTab(LinearLayout tabs, String title, boolean origin) {
         boolean selected = editingOrigin == origin;
@@ -1335,27 +1739,22 @@ public final class MainActivity extends Activity {
         });
         identity.addView(name, new LinearLayout.LayoutParams(MATCH, WRAP));
         gap(identity, 5);
-        choice(identity, "Village", Life.VILLAGES, draft.village, i -> draft.village = i);
+        choice(identity, "Gender", Life.GENDERS, draft.gender, i -> draft.gender = i);
+        choice(identity, "Birth village", Life.VILLAGES, draft.village, i -> draft.village = i);
         choice(identity, "Presence", Life.PRESENCE, draft.presence, i -> draft.presence = i);
-        int looks = Life.BASE_LOOKS[draft.presence] + (Clans.ALL[draft.clan].perk() == Stat.LOOKS ? Clans.ALL[draft.clan].start() : 0);
+        int looks = Life.BASE_LOOKS[draft.presence];
         identity.addView(text("Starting Looks " + Math.min(100, looks) + "/100. Your physical features are yours to choose.", 13, MUTED, BODY));
         body.addView(identity);
         gap(body, 10);
         LinearLayout ancestry = card(WHITE, 13);
-        ancestry.addView(text("Clan", 15, MUTED, MEDIUM));
-        LinearLayout clanLine = row();
-        addSeal(clanLine, draft.clan, 36);
-        TextView clanTitle = text(Clans.ALL[draft.clan].name() + " · " + Clans.ALL[draft.clan].perkLabel(), 18, INK, DISPLAY);
-        LinearLayout.LayoutParams clanTitleParams = new LinearLayout.LayoutParams(0, WRAP, 1);
-        clanTitleParams.setMarginStart(dp(9));
-        clanLine.addView(clanTitle, clanTitleParams);
-        ancestry.addView(clanLine);
+        ancestry.addView(text("Random clan & family", 18, INK, DISPLAY));
+        ancestry.addView(text("Your village determines which clans are possible. Your clan and household are revealed once you begin.", 14, MUTED, BODY));
         gap(ancestry, 6);
-        buttonIn(ancestry, "Browse clans", RED, BLUSH, () -> {
-            chooseClan = true;
-            filter = null;
-            go("clans");
-        });
+        ancestry.addView(text(draft.village == 3 ? "Rare bloodline · Sparkglass Eye" :
+                draft.village == 2 ? "Rare bloodlines · Horizon Eye or Farwatch Eye" :
+                draft.village == 4 ? "Rare bloodline · Horizon Eye" :
+                draft.village == 7 ? "Rare bloodline · Farwatch Eye" :
+                "Local lineages and clanless households", 13, PURPLE, MEDIUM));
         body.addView(ancestry);
         body.setFocusableInTouchMode(true);
         body.requestFocus();
@@ -1379,7 +1778,7 @@ public final class MainActivity extends Activity {
         if (!wardrobeMode) {
             draft.name = Life.randomName(random);
             draft.village = random.nextInt(Life.VILLAGES.length);
-            draft.clan = random.nextInt(Clans.ALL.length);
+            draft.gender = random.nextInt(Life.GENDERS.length);
             draft.presence = random.nextInt(Life.PRESENCE.length);
         }
         for (int i = 0; i < draft.style.length; i++) draft.style[i] = random.nextInt(Portrait.OPTIONS[i].length);
@@ -1405,14 +1804,14 @@ public final class MainActivity extends Activity {
             message("Enter a given name.");
             return;
         }
-        new AlertDialog.Builder(this).setTitle("Begin life as " + displayName(name, draft.clan) + "?")
+        new AlertDialog.Builder(this).setTitle("Begin life as " + name + "?")
                 .setMessage("Village: " + Life.VILLAGES[draft.village]
-                        + "\nClan perk: " + Clans.ALL[draft.clan].perkLabel()
+                        + "\nYour clan and family will be rolled when you begin."
                         + "\n\nBeginning a new life replaces the current save on this device.")
                 .setNegativeButton("Keep current life", null)
                 .setPositiveButton("Begin life", (dialog, which) -> {
                     getSystemService(InputMethodManager.class).hideSoftInputFromWindow(body.getWindowToken(), 0);
-                    life = Life.begin(name, draft.clan, draft.village, draft.presence, draft.style);
+                    life = Life.rollNewLife(name, draft.village, draft.gender, draft.presence, draft.style, new Random());
                     SaveGame.write(this, life);
                     draft = null;
                     wardrobeMode = false;

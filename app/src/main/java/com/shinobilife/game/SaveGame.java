@@ -19,11 +19,35 @@ final class SaveGame {
             life.name = json.getString("name");
             life.clan = bounded(json.getInt("clan"), Clans.ALL.length - 1);
             life.village = bounded(json.getInt("village"), Life.VILLAGES.length - 1);
+            life.homeVillage = bounded(json.optInt("homeVillage", life.village), Life.VILLAGES.length - 1);
+            life.career = Life.Career.values()[bounded(json.optInt("career"), Life.Career.values().length - 1)];
+            life.careerShifts = Math.max(0, json.optInt("careerShifts"));
+            life.gender = bounded(json.optInt("gender"), Life.GENDERS.length - 1);
+            life.family = bounded(json.optInt("family"), Life.FAMILIES.length - 1);
+            life.guardian = bounded(json.optInt("guardian"), 7);
+            life.villageActions = json.optInt("villageActions") & ((1 << Life.VillageAction.values().length) - 1);
             life.presence = bounded(json.getInt("presence"), Life.PRESENCE.length - 1);
             life.season = Math.max(0, json.getInt("season"));
             life.completed = json.getInt("completed");
             life.interacted = json.getInt("interacted");
             life.victories = Math.max(0, json.getInt("victories"));
+            int legacyRank = (life.victories >= 4 && json.getJSONObject("stats").optInt("SKILL") >= 35) ? 2
+                    : life.victories >= 3 ? 1 : 0;
+            life.academyRank = Life.AcademyRank.values()[bounded(json.optInt("academyRank", legacyRank), Life.AcademyRank.values().length - 1)];
+            life.academyCredits = bounded(json.optInt("academyCredits"), 10);
+            life.attendedClass = json.optBoolean("attendedClass");
+            life.campaigned = json.optBoolean("campaigned");
+            life.governed = json.optBoolean("governed");
+            life.warService = json.optBoolean("warService");
+            life.hokage = life.academyRank == Life.AcademyRank.JONIN && json.optBoolean("hokage");
+            life.campaignSupport = bounded(json.optInt("campaignSupport"), 30);
+            life.approval = bounded(json.optInt("approval"), 100);
+            life.borderTension = bounded(json.optInt("borderTension", 24), 100);
+            life.leafStability = bounded(json.optInt("leafStability", 75), 100);
+            life.leafTreasury = bounded(json.optInt("leafTreasury", 180), 400);
+            life.leafAtWar = json.optBoolean("leafAtWar");
+            life.warEffort = bounded(json.optInt("warEffort"), 60);
+            life.warSeasons = Math.max(0, json.optInt("warSeasons"));
             life.styled = json.getBoolean("styled");
             life.worked = json.getBoolean("worked");
             life.rested = json.getBoolean("rested");
@@ -33,12 +57,47 @@ final class SaveGame {
             life.enemyHp = bounded(json.optInt("enemyHp"), 72);
             life.round = Math.max(0, json.optInt("round"));
             life.duelLog = json.optString("duelLog");
+            int eyeMask = (1 << EyePower.values().length) - 1;
+            life.generation = bounded(json.optInt("generation", 1), 100000);
+            life.generationStart = bounded(json.optInt("generationStart"), life.season);
+            life.startAge = bounded(json.optInt("startAge", 18), 120);
+            life.worldSeed = json.optLong("worldSeed", 31L * life.name.hashCode() + life.homeVillage);
+            life.deathAge = json.optInt("deathAge", Math.max(life.deathAge, life.age() + 1));
+            life.deceased = json.optBoolean("deceased");
+            life.otherClan = bounded(json.optInt("otherClan", -1) + 1, Clans.ALL.length) - 1;
+            life.inheritedEyes = json.has("inheritedEyes") ? json.optInt("inheritedEyes", -1) : -1;
+            if (life.inheritedEyes >= 0) life.inheritedEyes &= eyeMask;
+            life.nextChildSeason = Math.max(0, json.optInt("nextChildSeason"));
+            JSONArray children = json.optJSONArray("children");
+            if (children != null) for (int i = 0; i < Math.min(children.length(), 6); i++) {
+                JSONObject child = children.optJSONObject(i);
+                if (child == null) continue;
+                life.children.add(new Life.Child(child.optString("name", "Ren"),
+                        bounded(child.optInt("gender"), Life.GENDERS.length - 1),
+                        bounded(child.optInt("clan"), Clans.ALL.length - 1),
+                        bounded(child.optInt("otherClan", -1) + 1, Clans.ALL.length) - 1,
+                        child.optInt("eyes") & eyeMask, bounded(child.optInt("born"), life.season),
+                        bounded(child.optInt("village"), Life.VILLAGES.length - 1)));
+            }
+            int partner = json.optInt("partner", -1);
+            life.partner = partner >= 0 && partner < Life.RESIDENT_COUNT ? partner : -1;
+            life.married = life.partner >= 0 && json.optBoolean("married");
+            JSONArray visits = json.optJSONArray("romanceLastVisit");
+            int oldVisits = json.optInt("romanceVisits");
+            JSONArray affection = json.optJSONArray("affection");
+            for (int i = 0; i < life.affection.length; i++) {
+                if (affection != null) life.affection[i] = bounded(affection.optInt(i), 100);
+                life.romanceLastVisit[i] = visits == null ? (i < 4 && (oldVisits & (1 << i)) != 0 ? life.season + 1 : 0)
+                        : bounded(visits.optInt(i), life.season + 1);
+            }
             life.burnTurns = bounded(json.optInt("burnTurns"), 2);
             life.observedMove = json.optInt("observedMove");
             if (life.observedMove != 10 && life.observedMove != 18) life.observedMove = 0;
             life.bindUsed = json.optBoolean("bindUsed");
-            life.eyeAwakened = life.clan().eye() != null && json.optBoolean("eyeAwakened");
-            life.eyeUsed = json.optBoolean("eyeUsed");
+            EyePower oldEye = life.clan().eye();
+            int legacyEye = oldEye != null && oldEye != EyePower.FARWATCH ? oldEye.mask() : 0;
+            life.awakenedEyes = json.optInt("awakenedEyes", json.optBoolean("eyeAwakened") ? legacyEye : 0) & life.heritageEyes();
+            life.usedEyes = json.optInt("usedEyes", json.optBoolean("eyeUsed") ? legacyEye : 0) & life.awakenedEyes;
             life.scoutedMissions = json.optInt("scoutedMissions", life.completed);
             int summonMask = (1 << Summon.ALL.length) - 1;
             life.bondedSummons = json.optInt("bondedSummons") & summonMask;
@@ -49,7 +108,7 @@ final class SaveGame {
                 life.summonBonds[i] = bounded(summons.optInt(i), 100);
             }
             JSONArray styles = json.getJSONArray("styles");
-            for (int i = 0; i < life.style.length; i++) life.style[i] = bounded(styles.getInt(i), Portrait.OPTIONS[i].length - 1);
+            for (int i = 0; i < life.style.length; i++) life.style[i] = bounded(styles.optInt(i, life.style[i]), Portrait.OPTIONS[i].length - 1);
             JSONArray bonds = json.getJSONArray("bonds");
             for (int i = 0; i < life.bonds.length; i++) life.bonds[i] = bounded(bonds.getInt(i), 100);
             JSONObject stats = json.getJSONObject("stats");
@@ -80,11 +139,33 @@ final class SaveGame {
             json.put("name", life.name);
             json.put("clan", life.clan);
             json.put("village", life.village);
+            json.put("homeVillage", life.homeVillage);
+            json.put("career", life.career.ordinal());
+            json.put("careerShifts", life.careerShifts);
+            json.put("gender", life.gender);
+            json.put("family", life.family);
+            json.put("guardian", life.guardian);
+            json.put("villageActions", life.villageActions);
             json.put("presence", life.presence);
             json.put("season", life.season);
             json.put("completed", life.completed);
             json.put("interacted", life.interacted);
             json.put("victories", life.victories);
+            json.put("academyCredits", life.academyCredits);
+            json.put("attendedClass", life.attendedClass);
+            json.put("campaigned", life.campaigned);
+            json.put("governed", life.governed);
+            json.put("warService", life.warService);
+            json.put("hokage", life.hokage);
+            json.put("campaignSupport", life.campaignSupport);
+            json.put("approval", life.approval);
+            json.put("borderTension", life.borderTension);
+            json.put("leafStability", life.leafStability);
+            json.put("leafTreasury", life.leafTreasury);
+            json.put("leafAtWar", life.leafAtWar);
+            json.put("warEffort", life.warEffort);
+            json.put("warSeasons", life.warSeasons);
+            json.put("academyRank", life.academyRank.ordinal());
             json.put("styled", life.styled);
             json.put("worked", life.worked);
             json.put("rested", life.rested);
@@ -94,11 +175,37 @@ final class SaveGame {
             json.put("enemyHp", life.enemyHp);
             json.put("round", life.round);
             json.put("duelLog", life.duelLog);
+            json.put("partner", life.partner);
+            json.put("married", life.married);
+            json.put("romanceLastVisit", new JSONArray(life.romanceLastVisit));
+            json.put("generation", life.generation);
+            json.put("generationStart", life.generationStart);
+            json.put("startAge", life.startAge);
+            json.put("worldSeed", life.worldSeed);
+            json.put("deathAge", life.deathAge);
+            json.put("deceased", life.deceased);
+            json.put("otherClan", life.otherClan);
+            json.put("inheritedEyes", life.inheritedEyes);
+            json.put("nextChildSeason", life.nextChildSeason);
+            JSONArray children = new JSONArray();
+            for (Life.Child child : life.children) {
+                JSONObject data = new JSONObject();
+                data.put("name", child.name());
+                data.put("gender", child.gender());
+                data.put("clan", child.clan());
+                data.put("otherClan", child.otherClan());
+                data.put("eyes", child.eyes());
+                data.put("born", child.born());
+                data.put("village", child.village());
+                children.put(data);
+            }
+            json.put("children", children);
+            json.put("affection", new JSONArray(life.affection));
             json.put("burnTurns", life.burnTurns);
             json.put("observedMove", life.observedMove);
             json.put("bindUsed", life.bindUsed);
-            json.put("eyeAwakened", life.eyeAwakened);
-            json.put("eyeUsed", life.eyeUsed);
+            json.put("awakenedEyes", life.awakenedEyes);
+            json.put("usedEyes", life.usedEyes);
             json.put("scoutedMissions", life.scoutedMissions);
             json.put("bondedSummons", life.bondedSummons);
             json.put("duelSummons", life.duelSummons);

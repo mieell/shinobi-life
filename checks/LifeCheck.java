@@ -47,7 +47,11 @@ final class LifeCheck {
         check(life.canStart(Missions.COURIER), "missions reopen after season");
         eyePowers();
         summonContracts();
-        System.out.println("Life checks passed for 23 combat paths, both eye powers, five summons, meditation, gifts, and favors.");
+        randomizedOrigins();
+        romanceProgression();
+        lineageProgression();
+        academyAndPolitics();
+        System.out.println("Life checks passed for 23 combat paths, three eye powers, five summons, meditation, gifts, favors, randomized origins, travel, escort branches, romance, mixed inheritance, succession, academy promotions, Hokage elections, war, and truces.");
     }
 
     private static void combatArt(int clan) {
@@ -125,6 +129,183 @@ final class LifeCheck {
         int hp = team.get(Stat.HEALTH);
         check(team.callInDuel(Summon.TORTOISE) && team.get(Stat.HEALTH) == hp, "tortoise blocks counter");
         check(team.duelSummonCount() == 2 && !team.callInDuel(Summon.LYNX), "two different calls per duel");
+    }
+
+    private static void randomizedOrigins() {
+        int[] style = new int[7];
+        Set<Integer> rolled = new HashSet<>();
+        Set<Integer> households = new HashSet<>();
+        java.util.Random random = new java.util.Random(91);
+        for (int village = 0; village < Life.VILLAGES.length; village++) {
+            for (int i = 0; i < 300; i++) {
+                Life life = Life.rollNewLife("Ren", village, 3, 1, style, random);
+                check(life.gender == 3 && life.homeVillage == village, "selected identity");
+                check(life.awakenedEyes == 0 && !life.duel(Life.Move.EYE), "eyes are dormant at birth");
+                if (life.clan().eye() == EyePower.SPARKGLASS) check(village == 3, "Sparkglass origins");
+                if (life.clan().eye() == EyePower.HORIZON) check(village == 2 || village == 4, "Horizon origins");
+                rolled.add(life.clan);
+                households.add(life.family);
+            }
+        }
+        check(rolled.size() == Clans.ALL.length && households.size() == Life.FAMILIES.length, "all origins obtainable");
+        Life life = start(0, 1);
+        check(life.visitVillage(1) && life.homeVillage == 0 && life.clan == 0, "travel preserves heritage");
+        int coins = life.get(Stat.COINS);
+        check(life.villageActivity(Life.VillageAction.MARKET) && life.get(Stat.COINS) == coins + 60,
+                "Lanternbridge wages");
+        check(!life.villageActivity(Life.VillageAction.MARKET), "seasonal activity limit");
+        life.advance();
+        check(life.villageActivity(Life.VillageAction.MARKET), "activities reset");
+        check(!life.escortWithScout() && life.escortShortcut(), "unaided shortcut");
+        check(life.journal.get(0).title().equals("Caravan ambushed"), "unprepared escort outcome");
+        Life worker = start(0, 1);
+        check(!worker.changeCareer(Life.Career.INSTRUCTOR), "career skill gate");
+        worker.add(Stat.SKILL, 16);
+        check(worker.changeCareer(Life.Career.INSTRUCTOR), "career application");
+        for (int i = 0; i < 3; i++) {
+            check(worker.work(), "career shift");
+            worker.advance();
+        }
+        check(worker.workPay() == 110, "job raises");
+        int trust = worker.bonds[2];
+        check(worker.villageActivity(Life.VillageAction.PICNIC) && worker.bonds[2] == trust + 8,
+                "social activity has a relationship outcome");
+        Life prepared = start(0, 1);
+        prepared.add(Stat.SKILL, 12);
+        check(prepared.escortShortcut() && prepared.get(Stat.FAME) == 12, "prepared escort extra fame");
+        Life scout = named("Toriba");
+        check(scout.escortWithScout() && !scout.escortShortcut(), "scouted escort uses contract and closes mission");
+        check(scout.journal.get(0).title().equals("A lantern in the pass"), "scouted outcome logged");
+    }
+
+    private static void romanceProgression() {
+        Life player = start(0, 2);
+        Life.Interest emi = Life.Interest.EMI;
+        Life.Interest haru = Life.Interest.HARU;
+        check(!player.romance(emi, Life.RomanceAction.WALK), "introductions come first");
+        check(player.romance(emi, Life.RomanceAction.INTRODUCE), "meet");
+        check(!player.romance(emi, Life.RomanceAction.TALK), "one visit per season");
+        player.advance();
+        check(player.romance(emi, Life.RomanceAction.TALK), "share stories");
+        player.advance();
+        int affection = player.affection(emi);
+        check(player.romance(emi, Life.RomanceAction.WALK) && player.affection(emi) == affection + 23,
+                "favorite date and Looks bonuses");
+        player.advance();
+        check(!player.romance(emi, Life.RomanceAction.COMMIT), "commitment threshold");
+        check(player.romance(emi, Life.RomanceAction.WALK), "second date");
+        player.advance();
+        check(player.romance(emi, Life.RomanceAction.COMMIT) && player.isPartner(emi), "mutual commitment");
+        player.affection[haru.ordinal()] = 45;
+        check(!player.romance(haru, Life.RomanceAction.DINNER) && player.romance(haru, Life.RomanceAction.TALK),
+                "partner blocks other dates but allows friendship");
+        player.advance();
+        check(!player.romance(emi, Life.RomanceAction.PROPOSE), "proposal threshold");
+        int coins = player.get(Stat.COINS);
+        check(player.romance(emi, Life.RomanceAction.DINNER) && player.get(Stat.COINS) == coins - 28, "paid dinner");
+        player.advance();
+        check(player.romance(emi, Life.RomanceAction.PROPOSE) && player.married, "marriage");
+        check(player.endRomance(emi) && player.partner == -1 && !player.married, "divorce and clears partnership");
+        check(player.journal.get(0).title().equals("Divorced Emi"), "romance in journal");
+    }
+
+    private static void lineageProgression() {
+        int copy = EyePower.SPARKGLASS.mask();
+        int far = EyePower.FARWATCH.mask();
+        Set<Integer> outcomes = new HashSet<>();
+        java.util.Random random = new java.util.Random(74);
+        for (int i = 0; i < 200; i++) outcomes.add(Life.inheritEyes(copy, far, random));
+        check(outcomes.contains(0) && outcomes.contains(copy) && outcomes.contains(far) && outcomes.contains(copy | far),
+                "both, either, or neither bloodline");
+        check(Life.inheritEyes(0, 0, random) == 0, "no spontaneous eye powers");
+
+        Life parent = named("Kagaribi");
+        Life.Interest other = null;
+        for (int seed = 0; seed < 30 && other == null; seed++) {
+            parent = named("Kagaribi");
+            parent.worldSeed = seed;
+            for (Life.Interest resident : parent.residents()) {
+                if ((resident.eyes() & far) != 0) { other = resident; break; }
+            }
+        }
+        check(parent.residents().length == 100 && other != null, "populated world with inherited bloodlines");
+        parent.partner = other.ordinal();
+        parent.affection[parent.partner] = 90;
+        java.util.Random passesBoth = new java.util.Random() {
+            @Override public boolean nextBoolean() { return true; }
+        };
+        check(parent.welcomeChild("Aki", passesBoth), "family growth");
+        check(!parent.welcomeChild("Ren", passesBoth), "spacing between children");
+        Life.Child child = parent.children.get(0);
+        check(child.eyes() == (copy | far) && child.otherClan() == other.clan, "mixed child data");
+        check(parent.succeed(child) == null, "succession after death only");
+        parent.deathAge = 19;
+        for (int i = 0; i < 4; i++) parent.advance();
+        Life heir = parent.succeed(child);
+        check(parent.deceased && heir != null && heir.age() == 18 && heir.generation == 2, "continue as child");
+        check(heir.heritageEyes() == (copy | far) && heir.awakenedEyes == 0, "inherited eyes are dormant");
+        heir.add(Stat.SKILL, 20);
+        heir.victories = 1;
+        check(!heir.awakenEye(EyePower.HORIZON), "unrelated eye cannot awaken");
+        check(heir.awakenEye(EyePower.SPARKGLASS) && heir.awakenEye(EyePower.FARWATCH), "independent awakenings");
+        check(heir.take(Missions.DUEL, false) && heir.duel(Life.Move.GUARD)
+                && heir.castEye(EyePower.SPARKGLASS) && heir.castEye(EyePower.FARWATCH)
+                && !heir.castEye(EyePower.FARWATCH), "both inherited combat arts usable");
+    }
+
+    private static void academyAndPolitics() {
+        Life player = Life.begin("Ren", 0, Life.LEAF, 1, new int[7]);
+        check(player.rank().equals("Genin") && !player.runForHokage(), "academy and office start locked");
+        check(player.attendClass(Life.Lesson.TACTICS) && !player.attendClass(Life.Lesson.CONTROL), "one class per season");
+        player.advance();
+        check(player.attendClass(Life.Lesson.TACTICS), "credit persists and new term opens");
+        player.add(Stat.SKILL, 4);
+        check(!player.takeExam(), "duel requirement");
+        player.victories = 1;
+        check(player.takeExam() && player.academyRank == Life.AcademyRank.CHUNIN, "first promotion");
+        check(player.academyCredits == 0, "new preparation cycle");
+        for (int i = 0; i < 3; i++) {
+            player.advance();
+            check(player.attendClass(Life.Lesson.TACTICS), "advanced class");
+        }
+        player.add(Stat.SKILL, 1);
+        player.victories = 3;
+        check(player.takeExam() && player.academyRank == Life.AcademyRank.JONIN, "second promotion");
+        player.add(Stat.FAME, 40);
+        check(!player.runForHokage(), "public support is required");
+        for (int i = 0; i < 2; i++) {
+            player.advance();
+            check(player.campaign() && !player.campaign(), "public meetings once per season");
+        }
+        check(player.runForHokage() && player.rank().equals("Hokage"), "Hidden Leaf election");
+        player.borderTension = 41;
+        check(player.govern(Life.Policy.WAR) && player.leafAtWar, "declaration");
+        check(!player.govern(Life.Policy.DIPLOMACY), "one policy per season");
+        check(player.helpDuringWar(true) && !player.helpDuringWar(false), "wartime service");
+        int personal = player.get(Stat.COINS);
+        player.advance();
+        check(player.govern(Life.Policy.DIPLOMACY) && player.leafAtWar, "first diplomatic talks");
+        player.advance();
+        check(player.govern(Life.Policy.DIPLOMACY) && !player.leafAtWar, "negotiated ceasefire");
+        check(player.get(Stat.COINS) == personal, "policy fees use the village treasury");
+
+        player.leafAtWar = true;
+        player.warEffort = 59;
+        check(player.helpDuringWar(true), "can rally village effort");
+        player.advance();
+        check(!player.leafAtWar && player.hokage, "successful defense ends war");
+        player.leafAtWar = true;
+        player.leafStability = 4;
+        player.advance();
+        check(!player.leafAtWar && !player.hokage, "defeat removes leader");
+
+        Life civilian = start(0, 1);
+        civilian.borderTension = 70;
+        civilian.advance();
+        civilian.advance();
+        check(civilian.leafAtWar, "war can begin independently of the player");
+        for (int i = 0; i < 5; i++) civilian.advance();
+        check(!civilian.leafAtWar, "council can broker an AI ceasefire");
     }
 
     private static Life named(String name) {

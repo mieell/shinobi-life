@@ -2,13 +2,27 @@
 
 An offline Android life simulator with layered cel-shaded character portraits, custom clan crests and summon models, clan techniques, and a journal that records your choices.
 
-Start on the **Title screen** to continue your active life, browse career milestones, open the **Wardrobe** to restyle your character anytime, open the **Clan & Bloodline Codex**, or begin a **New Shinobi Life**. **Appearance** lets you preview hairstyles, colors, outfits, scars and markings, headbands, masks, and bloodline eyes. **Origin** lets you choose a village and clan and set starting Looks through **Presence**. New lives begin at 18 after academy graduation. The app keeps one active life on the device and asks before replacing it.
+Start on the **Title screen** to continue your active life, browse career milestones, open the **Wardrobe** to restyle your character anytime, open the **Clan & Bloodline Codex**, or begin a **New Shinobi Life**. **Appearance** lets you preview hairstyles, colors, outfits, scars and markings, headbands, and masks. **Origin** lets you choose gender and a birth village and set starting Looks through **Presence**. The game rolls your household and clan after you confirm your new life. Hidden Leaf can roll Kagaribi, and Hidden Mist or Starwatch can roll Shinkai. Each rare clan has a 5% chance in its eligible villages. Uramori's Farwatch Eye can roll in Starwatch or Hidden Cloud. Founders can awaken their clan eye. Children can awaken each eye they actually inherited from either parent. New lives begin at 18 after academy graduation. The app keeps one active life on the device and asks before replacing it.
 
 - **Life** shows your resources, rank, clan seal, and journal. Train, meditate at the shrine, style or restyle in the wardrobe, work, rest, or advance one season. Four seasons add a year.
-- **Missions** offers five assignments and a turn-based public duel. A matching clan technique adds a bonus to an assignment. Every starting path has a combat art for the duel, including fire, lightning, illusions, shadow binds, seals, regeneration, and gravity.
+- **Activities & travel** has sixteen seasonal activities across academy training, work, social life, and wellness. The career board offers four jobs with Skill requirements and raises based on completed shifts. Eight villages support travel and local work. Local work pays different rewards in each village. Travel changes your current location without changing your birthplace or clan.
+- **Missions** offers five assignments and a turn-based public duel. A matching clan technique adds a bonus to an assignment. Every starting path has a combat art for the duel, including fire, lightning, illusions, shadow binds, seals, regeneration, and gravity. The escort has a safe road, a risky shortcut, and a scouting route if you have a Lantern Shrike.
 - **Clans** explains the origins, starting perk, combat art, and mission specialty of 22 original clans. Kagaribi can awaken the Sparkglass Eye at 19 Skill to read an attack and copy it. Shinkai can awaken the Horizon Eye at 25 Skill and two duel wins to pin an opponent with gravity. Awaken an eligible eye from the Life screen.
 - **Summons** lets you sign and train five companions. Complete a companion’s matching assignment to unlock its contract. Toriba starts with a Lantern Shrike. A signed companion can help with its matching mission, and you can call up to two different companions during the same duel. Higher bond increases their duel damage.
+- **People → Romance** includes 12 randomized residents per village plus four familiar faces. Share stories, choose dates based on their interests, and grow Affection into a partnership or marriage. You can end a relationship, and your choices appear in the journal. Each interest has one visit per season.
 - **People** lets you build Trust with a family member, friend, and rival through visits and market keepsakes, and unlock unique seasonal Ally Favors at 60 Trust. A Looks score of 75 or higher improves Trust gains from visits. Completing missions and winning duels raises Fame. At 25 and 60 Fame, villagers react differently as seasons pass.
+
+## Academy and village politics
+
+Open **Academy** from Life to take one class per season and earn exam credits. New shinobi start as Genin. Chūnin and Jōnin exams also require Skill, Cedar Pass wins, and stamina.
+
+Open **Village council** to see the current village leader. In Hidden Leaf, a Jōnin with at least 55 Fame and 60 public support can run for Hokage. The Hokage can spend village funds on relief, shelters, or diplomacy, and can declare war when tensions are high. Once at war, civilians can deliver supplies or escort evacuees. A war can reduce village stability and Happiness, and diplomacy can end it. A successor keeps the world's conflict state and earns rank and office separately.
+
+## Family legacy
+
+In **People → Family & lineage**, a partner with 70 Affection can welcome a child with you. Each parent independently has a 50% chance to pass on each eye power they carry. Two different powers can both pass, one can pass, or neither can pass. A child gets one parent's primary clan for its regular combat art.
+
+When your character dies of old age, choose a child to continue as. A younger heir's story advances to adulthood. The heir keeps half the estate and the journal, and any inherited eyes start dormant.
 
 ## Clan tier list
 

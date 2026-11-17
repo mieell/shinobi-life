@@ -35,6 +35,7 @@ final class Clans {
             return switch (name) {
                 case "Kagaribi" -> EyePower.SPARKGLASS;
                 case "Shinkai" -> EyePower.HORIZON;
+                case "Uramori" -> EyePower.FARWATCH;
                 default -> null;
             };
         }

@@ -421,7 +421,7 @@ final class Portrait extends View {
         c.drawRect(x - 8, y - 6, x + 8, y - 2.6f, paint);
 
         int iris = eyePower == EyePower.SPARKGLASS ? 0xFFD0362F
-                : eyePower == EyePower.HORIZON ? 0xFF7B4AC2 : normalColor;
+                : eyePower == EyePower.HORIZON ? 0xFF7B4AC2 : eyePower == EyePower.FARWATCH ? 0xFFB4DFE0 : normalColor;
         paint.setColor(iris);
         c.drawOval(x - 4.0f, y - 4.1f, x + 4.0f, y + 4.2f, paint);
 
